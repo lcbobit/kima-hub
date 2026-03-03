@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-playlist add**: The "Add to Playlist" picker in the full player now supports selecting multiple playlists at once with checkboxes and a confirm button. Existing single-select callers are unchanged.
 - **Playlist visibility toggle**: Globe/Lock button on the playlist detail page lets owners toggle public/private visibility. Previously required database editing for imported playlists.
 - **BullMQ import queue**: Playlist imports (Spotify, Deezer, M3U) now run via a dedicated `playlist-import` BullMQ queue instead of fire-and-forget async. Provides crash recovery, visibility in Bull Board admin panel, and proper queue semantics.
+- **Podcast refresh buttons**: RefreshCw button on podcast detail page checks for new episodes. "Refresh All" button on main podcasts page queues refresh for all subscriptions via BullMQ.
+- **Custom RSS feed subscription**: "Add RSS Feed" button on the main podcasts page lets users subscribe to any podcast by pasting a direct RSS feed URL, without needing to find it on Apple Podcasts.
+- **Conditional GET for feed refresh**: Podcast feed fetches now send `If-Modified-Since` and `ETag` headers, receiving 304 Not Modified when feeds haven't changed. Reduces bandwidth and server load for hourly auto-refresh.
 
 ### Fixed
 
