@@ -5,6 +5,20 @@ All notable changes to Kima will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.2] - 2026-03-03
+
+### Added
+
+- **M3U playlist import**: Upload `.m3u` / `.m3u8` playlist files to create playlists by matching entries against your library. 4-tier matching: file path, filename, exact metadata, fuzzy metadata (fuzzball). Available on the Import page under a new "File Import" tab.
+- **Multi-playlist add**: The "Add to Playlist" picker in the full player now supports selecting multiple playlists at once with checkboxes and a confirm button. Existing single-select callers are unchanged.
+- **Playlist visibility toggle**: Globe/Lock button on the playlist detail page lets owners toggle public/private visibility. Previously required database editing for imported playlists.
+- **BullMQ import queue**: Playlist imports (Spotify, Deezer, M3U) now run via a dedicated `playlist-import` BullMQ queue instead of fire-and-forget async. Provides crash recovery, visibility in Bull Board admin panel, and proper queue semantics.
+
+### Fixed
+
+- **Spotify 100-track pagination**: Anonymous Spotify tokens cap `tracks.total` at 100, preventing pagination from triggering. Now speculatively fetches additional pages when a full page of results is received, bypassing the cap for playlists of any size.
+- **Playlist partial update schema**: `PUT /playlists/:id` previously required `name` in every request body (using create schema). Now uses a dedicated update schema where both `name` and `isPublic` are optional, supporting partial updates without resetting unrelated fields.
+
 ## [1.6.1] - 2026-03-03
 
 Closes #121, #125, #136, #138. Partially addresses #139, #25, #108, #30.
