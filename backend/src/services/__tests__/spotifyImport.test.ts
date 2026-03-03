@@ -1,6 +1,22 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
+describe('Spotify Pagination Guard', () => {
+    const source = fs.readFileSync(
+        path.resolve(__dirname, '../spotify.ts'), 'utf-8'
+    );
+
+    it('should attempt pagination when items.length equals total (speculative fetch)', () => {
+        const fetchMethod = source.slice(
+            source.indexOf('private async fetchPlaylistViaAnonymousApi('),
+            source.indexOf('private async ', source.indexOf('private async fetchPlaylistViaAnonymousApi(') + 1)
+        );
+
+        // Should have speculative pagination when total === items.length
+        expect(fetchMethod).toMatch(/allItems\.length\s*>=\s*(?:\d+|PAGE_SIZE)/);
+    });
+});
+
 describe('SpotifyImport Status Guards', () => {
     const source = fs.readFileSync(
         path.resolve(__dirname, '../spotifyImport.ts'), 'utf-8'
