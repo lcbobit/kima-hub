@@ -390,9 +390,11 @@ router.get("/preview/:itunesId", requireAuth, async (req, res) => {
         let previewEpisodes: any[] = [];
         if (podcastData.feedUrl) {
             try {
-                const feedData = await rssParserService.parseFeed(
+                const feedResult = await rssParserService.parseFeed(
                     podcastData.feedUrl
                 );
+                if (feedResult.notModified) throw new Error("Unexpected 304 on preview fetch");
+                const feedData = feedResult;
                 description = feedData.podcast.description || "";
 
                 // Get first 3 episodes for preview
@@ -616,8 +618,11 @@ router.post("/subscribe", requireAuth, async (req, res) => {
 
         // Parse RSS feed to get podcast and episodes
         logger.debug(`   Parsing RSS feed...`);
-        const { podcast: podcastData, episodes } =
-            await rssParserService.parseFeed(finalFeedUrl);
+        const subscribeResult = await rssParserService.parseFeed(finalFeedUrl);
+        if (subscribeResult.notModified) {
+            return res.status(500).json({ error: "Unexpected 304 on initial subscribe" });
+        }
+        const { podcast: podcastData, episodes } = subscribeResult;
 
         // Create podcast in database
         logger.debug(`    Saving podcast to database...`);
@@ -635,6 +640,8 @@ router.post("/subscribe", requireAuth, async (req, res) => {
                 language: podcastData.language,
                 explicit: podcastData.explicit || false,
                 episodeCount: episodes.length,
+                feedEtag: subscribeResult.etag || null,
+                feedLastModified: subscribeResult.lastModified || null,
             },
         });
 
@@ -1524,24 +1531,37 @@ export async function refreshPodcastFeed(podcastId: string): Promise<{ newEpisod
     const podcast = await prisma.podcast.findUnique({ where: { id: podcastId } });
     if (!podcast) throw new Error(`Podcast ${podcastId} not found`);
 
-    const { podcast: podcastData, episodes } = await rssParserService.parseFeed(podcast.feedUrl);
+    const result = await rssParserService.parseFeed(podcast.feedUrl, {
+        etag: podcast.feedEtag,
+        lastModified: podcast.feedLastModified,
+    });
+
+    if (result.notModified) {
+        await prisma.podcast.update({
+            where: { id: podcastId },
+            data: { lastRefreshed: new Date() },
+        });
+        return { newEpisodesCount: 0, totalEpisodes: podcast.episodeCount };
+    }
 
     await prisma.podcast.update({
         where: { id: podcastId },
         data: {
-            title: podcastData.title,
-            author: podcastData.author,
-            description: podcastData.description,
-            imageUrl: podcastData.imageUrl,
-            language: podcastData.language,
-            explicit: podcastData.explicit || false,
-            episodeCount: episodes.length,
+            title: result.podcast.title,
+            author: result.podcast.author,
+            description: result.podcast.description,
+            imageUrl: result.podcast.imageUrl,
+            language: result.podcast.language,
+            explicit: result.podcast.explicit || false,
+            episodeCount: result.episodes.length,
             lastRefreshed: new Date(),
+            feedEtag: result.etag || null,
+            feedLastModified: result.lastModified || null,
         },
     });
 
     // Batch fetch all existing GUIDs to avoid N+1 queries
-    const feedGuids = episodes.map(e => e.guid).filter(Boolean);
+    const feedGuids = result.episodes.map(e => e.guid).filter(Boolean);
     const existingGuids = new Set(
         (await prisma.podcastEpisode.findMany({
             where: { podcastId, guid: { in: feedGuids } },
@@ -1550,7 +1570,7 @@ export async function refreshPodcastFeed(podcastId: string): Promise<{ newEpisod
     );
 
     let newEpisodesCount = 0;
-    for (const ep of episodes) {
+    for (const ep of result.episodes) {
         if (existingGuids.has(ep.guid)) continue;
 
         await prisma.podcastEpisode.create({
@@ -1572,7 +1592,7 @@ export async function refreshPodcastFeed(podcastId: string): Promise<{ newEpisod
         newEpisodesCount++;
     }
 
-    return { newEpisodesCount, totalEpisodes: episodes.length };
+    return { newEpisodesCount, totalEpisodes: result.episodes.length };
 }
 
 export default router;

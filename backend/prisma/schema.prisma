@@ -428,6 +428,8 @@ model Podcast {
   lastRefreshed   DateTime                 @default(now())
   refreshInterval Int                      @default(3600)
   autoRefresh     Boolean                  @default(true)
+  feedEtag        String?
+  feedLastModified String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   searchVector    Unsupported("tsvector")?
