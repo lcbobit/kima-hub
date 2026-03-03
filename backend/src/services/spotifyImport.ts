@@ -1407,18 +1407,26 @@ class SpotifyImportService {
     // Save to database and memory cache
     await saveImportJob(job);
 
-    // Start processing in background
-    this.processImport(job, albumMbidsToDownload, preview).catch(
-      async (error) => {
-        job.status = "failed";
-        job.error = error.message;
-        job.updatedAt = new Date();
-        await saveImportJob(job);
-        jobLogger?.logJobFailed(error.message);
-        // Clean up job logger to prevent memory leak
-        jobLoggers.delete(job.id);
-      },
-    );
+    // Cache preview for the BullMQ worker to retrieve
+    try {
+      await redisClient.setEx(
+        `import:preview:${job.id}`,
+        IMPORT_JOB_TTL,
+        JSON.stringify(preview),
+      );
+    } catch {}
+
+    // Enqueue import job to BullMQ for crash-recoverable processing
+    const { importQueue } = await import("../workers/queues");
+    await importQueue.add("import", {
+      importJobId: job.id,
+      userId: job.userId,
+      albumMbidsToDownload,
+    }, {
+      jobId: job.id,
+    });
+
+    jobLogger?.info(`[Spotify Import] Enqueued job ${job.id} to BullMQ`);
 
     return job;
   }
@@ -3296,6 +3304,49 @@ class SpotifyImportService {
       unmatched: unmatchedEntries.length,
       total: entries.length,
     };
+  }
+
+  /**
+   * Process an import job from the BullMQ worker.
+   * Loads the job and cached preview from Redis/DB, then delegates to processImport.
+   */
+  async processImportFromQueue(importJobId: string, albumMbidsToDownload: string[]): Promise<void> {
+    const job = await this.getJob(importJobId);
+    if (!job) throw new Error(`Import job ${importJobId} not found`);
+
+    // Retrieve cached preview from Redis
+    let preview: ImportPreview | null = null;
+    try {
+      const cached = await redisClient.get(`import:preview:${importJobId}`);
+      if (cached) preview = JSON.parse(cached);
+    } catch {}
+
+    if (!preview) {
+      throw new Error(`Preview not found for import job ${importJobId}`);
+    }
+
+    // Create job logger
+    const jobLogger = createPlaylistLogger(importJobId);
+    jobLoggers.set(importJobId, jobLogger);
+
+    try {
+      await this.processImport(job, albumMbidsToDownload, preview);
+    } finally {
+      jobLoggers.delete(importJobId);
+    }
+  }
+
+  /**
+   * Mark an import job as failed (used by the BullMQ worker's failed handler)
+   */
+  async markJobFailed(importJobId: string, errorMessage: string): Promise<void> {
+    const job = await this.getJob(importJobId);
+    if (!job) return;
+
+    job.status = "failed";
+    job.error = errorMessage;
+    job.updatedAt = new Date();
+    await saveImportJob(job);
   }
 }
 

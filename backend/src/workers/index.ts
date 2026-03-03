@@ -3,10 +3,13 @@ import { logger } from "../utils/logger";
 import {
     scanQueue,
     discoverQueue,
+    importQueue,
 } from "./queues";
 import { processScan } from "./processors/scanProcessor";
 import { processDiscoverWeekly } from "./processors/discoverProcessor";
+import { processImportJob } from "./processors/importProcessor";
 import { createWorkerConnection } from "./enrichmentQueues";
+import { spotifyImportService } from "../services/spotifyImport";
 import {
     startUnifiedEnrichmentWorker,
     stopUnifiedEnrichmentWorker,
@@ -45,6 +48,16 @@ const discoverWorker = new Worker("discover-weekly-v2", processDiscoverWeekly, {
     concurrency: 1,
     lockDuration: 120000,
 });
+
+const importWorker = new Worker(
+    "playlist-import",
+    async (job) => processImportJob(job),
+    {
+        connection: createWorkerConnection(),
+        concurrency: 1,
+        lockDuration: 600000, // 10 minutes -- imports with downloads can be slow
+    }
+);
 
 // Register download queue callback for unavailable albums
 downloadQueueManager.onUnavailableAlbum(async (info) => {
@@ -144,6 +157,26 @@ discoverWorker.on("active", (job) => {
 
 discoverWorker.on("error", (err) => {
     logger.error("Discover worker error:", err.message);
+});
+
+// Event handlers for import worker
+importWorker.on("completed", (job) => {
+    logger.info(`[ImportWorker] Job ${job.id} completed`);
+});
+
+importWorker.on("failed", async (job, err) => {
+    logger.error(`[ImportWorker] Job ${job?.id} failed: ${err.message}`);
+    if (job?.data?.importJobId) {
+        try {
+            await spotifyImportService.markJobFailed(job.data.importJobId, err.message);
+        } catch (e: any) {
+            logger.error(`[ImportWorker] Failed to mark job as failed: ${e.message}`);
+        }
+    }
+});
+
+importWorker.on("error", (err) => {
+    logger.error("[ImportWorker] Worker error:", err.message);
 });
 
 logger.debug("BullMQ workers registered and event handlers attached");
@@ -369,11 +402,11 @@ export async function shutdownWorkers(): Promise<void> {
     timeouts.length = 0;
 
     // Close workers first so in-flight jobs complete, then close queues
-    await Promise.all([scanWorker.close(), discoverWorker.close()]);
-    await Promise.all([scanQueue.close(), discoverQueue.close()]);
+    await Promise.all([scanWorker.close(), discoverWorker.close(), importWorker.close()]);
+    await Promise.all([scanQueue.close(), discoverQueue.close(), importQueue.close()]);
 
     logger.debug("Workers shutdown complete");
 }
 
 // Export queues for use in other modules
-export { scanQueue, discoverQueue };
+export { scanQueue, discoverQueue, importQueue };
