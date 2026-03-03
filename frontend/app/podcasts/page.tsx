@@ -146,9 +146,7 @@ export default function PodcastsPage() {
         setIsRefreshingAll(true);
         try {
             await api.refreshAllPodcasts();
-            setTimeout(() => {
-                queryClient.invalidateQueries({ queryKey: queryKeys.podcasts() });
-            }, 3000);
+            queryClient.invalidateQueries({ queryKey: queryKeys.podcasts() });
         } catch (error) {
             console.error("Failed to refresh podcasts:", error);
         } finally {

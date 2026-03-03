@@ -608,6 +608,12 @@ router.post("/subscribe", requireAuth, async (req, res) => {
             logger.debug(`   Found feed URL: ${finalFeedUrl}`);
         }
 
+        // SSRF validation: block internal/private addresses
+        const ssrfError = await validateUrlForFetch(finalFeedUrl);
+        if (ssrfError) {
+            return res.status(400).json({ error: `Invalid feed URL: ${ssrfError}` });
+        }
+
         // Check if podcast already exists in database
         let podcast = await prisma.podcast.findUnique({
             where: { feedUrl: finalFeedUrl },
