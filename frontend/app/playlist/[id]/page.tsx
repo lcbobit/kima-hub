@@ -10,7 +10,7 @@ import { audioEngine } from "@/lib/audio-engine";
 import { cn } from "@/utils/cn";
 import { shuffleArray } from "@/utils/shuffle";
 import { formatTime } from "@/utils/formatTime";
-import { usePlaylistQuery } from "@/hooks/useQueries";
+import { queryKeys, usePlaylistQuery, useRemoveFromPlaylistMutation, useDeletePlaylistMutation, useUpdatePlaylistMutation } from "@/hooks/useQueries";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/lib/toast-context";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
@@ -30,9 +30,14 @@ import {
     X,
     Loader2,
     ArrowLeft,
+    Share2,
+    Copy,
+    Check,
+    Link as LinkIcon,
 } from "lucide-react";
 import { useTrackFormat } from "@/hooks/useTrackFormat";
 import { formatTrackDisplay } from "@/lib/track-format";
+import { useDoubleTapList } from "@/hooks/useDoubleTap";
 
 interface Track {
     id: string;
@@ -80,12 +85,23 @@ export default function PlaylistDetailPage() {
     const { playTracks, addToQueue, pause, resumeWithGesture } = useAudioControls();
     const playlistId = params.id as string;
 
+    const { mutateAsync: removeTrack } = useRemoveFromPlaylistMutation();
+    const { mutateAsync: deletePlaylistMut } = useDeletePlaylistMutation();
+    const { mutateAsync: updatePlaylist } = useUpdatePlaylistMutation();
+    const [isEditingName, setIsEditingName] = useState(false);
+    const [editName, setEditName] = useState("");
+    const editSaveRef = useRef(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [isHiding, setIsHiding] = useState(false);
     const [playingPreviewId, setPlayingPreviewId] = useState<string | null>(null);
     const [retryingTrackId, setRetryingTrackId] = useState<string | null>(null);
     const [removingTrackId, setRemovingTrackId] = useState<string | null>(null);
     const [retryingAll, setRetryingAll] = useState(false);
+    const [shareUrl, setShareUrl] = useState<string | null>(null);
+    const [shareToken, setShareToken] = useState<string | null>(null);
+    const [shareLoading, setShareLoading] = useState(false);
+    const [shareCopied, setShareCopied] = useState(false);
+    const [showSharePopover, setShowSharePopover] = useState(false);
     const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
@@ -96,6 +112,23 @@ export default function PlaylistDetailPage() {
             }
         };
     }, []);
+
+    useEffect(() => {
+        if (!showSharePopover) return;
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as HTMLElement;
+            if (!target.closest("[data-share-popover]")) {
+                setShowSharePopover(false);
+            }
+        };
+        const timer = setTimeout(() => {
+            document.addEventListener("click", handleClickOutside);
+        }, 0);
+        return () => {
+            clearTimeout(timer);
+            document.removeEventListener("click", handleClickOutside);
+        };
+    }, [showSharePopover]);
 
     const handlePlayPreview = async (pendingId: string) => {
         if (playingPreviewId === pendingId && previewAudioRef.current) {
@@ -147,7 +180,7 @@ export default function PlaylistDetailPage() {
                 queryClient.invalidateQueries({ queryKey: ["notifications"] });
                 setTimeout(() => {
                     queryClient.invalidateQueries({
-                        queryKey: ["playlist", playlistId],
+                        queryKey: queryKeys.playlist(playlistId),
                     });
                 }, 10000);
             } else {
@@ -176,7 +209,7 @@ export default function PlaylistDetailPage() {
                 toast.success(`Retrying ${result.queued} tracks`);
                 setTimeout(() => {
                     queryClient.invalidateQueries({
-                        queryKey: ["playlist", playlistId],
+                        queryKey: queryKeys.playlist(playlistId),
                     });
                 }, 15000);
             } else {
@@ -195,10 +228,12 @@ export default function PlaylistDetailPage() {
         try {
             await api.removePendingTrack(playlistId, pendingId);
             queryClient.invalidateQueries({
-                queryKey: ["playlist", playlistId],
+                queryKey: queryKeys.playlist(playlistId),
             });
+            queryClient.invalidateQueries({ queryKey: queryKeys.playlists() });
         } catch (error) {
             console.error("Failed to remove pending track:", error);
+            toast.error("Failed to remove pending track");
         } finally {
             setRemovingTrackId(null);
         }
@@ -218,10 +253,11 @@ export default function PlaylistDetailPage() {
                 await api.hidePlaylist(playlistId);
             }
 
-            queryClient.setQueryData(["playlist", playlistId], (old: Record<string, unknown>) => ({
+            queryClient.setQueryData(queryKeys.playlist(playlistId), (old: Record<string, unknown>) => ({
                 ...old,
                 isHidden: !playlist.isHidden,
             }));
+            queryClient.invalidateQueries({ queryKey: queryKeys.playlists() });
 
             window.dispatchEvent(
                 new CustomEvent("playlist-updated", { detail: { playlistId } })
@@ -232,6 +268,7 @@ export default function PlaylistDetailPage() {
             }
         } catch (error) {
             console.error("Failed to toggle playlist visibility:", error);
+            toast.error("Failed to update playlist visibility");
         } finally {
             setIsHiding(false);
         }
@@ -266,15 +303,16 @@ export default function PlaylistDetailPage() {
 
     const handleRemoveTrack = async (trackId: string) => {
         try {
-            await api.removeTrackFromPlaylist(playlistId, trackId);
+            await removeTrack({ playlistId, trackId });
         } catch (error) {
             console.error("Failed to remove track:", error);
+            toast.error("Failed to remove track");
         }
     };
 
     const handleDeletePlaylist = async () => {
         try {
-            await api.deletePlaylist(playlistId);
+            await deletePlaylistMut(playlistId);
 
             window.dispatchEvent(
                 new CustomEvent("playlist-deleted", { detail: { playlistId } })
@@ -283,6 +321,39 @@ export default function PlaylistDetailPage() {
             router.push("/playlists");
         } catch (error) {
             console.error("Failed to delete playlist:", error);
+            toast.error("Failed to delete playlist");
+        }
+    };
+
+    const handleShare = async () => {
+        if (shareUrl) {
+            setShowSharePopover(true);
+            return;
+        }
+        setShareLoading(true);
+        try {
+            const result = await api.createShareLink("playlist", playlistId);
+            const fullUrl = `${window.location.origin}/share/${result.token}`;
+            setShareToken(result.token);
+            setShareUrl(fullUrl);
+            setShowSharePopover(true);
+        } catch (err) {
+            console.error("Failed to create share link:", err);
+            toast.error("Failed to create share link");
+        } finally {
+            setShareLoading(false);
+        }
+    };
+
+    const handleCopyShareUrl = async () => {
+        if (!shareUrl) return;
+        try {
+            await navigator.clipboard.writeText(shareUrl);
+            setShareCopied(true);
+            toast.success("Link copied to clipboard");
+            setTimeout(() => setShareCopied(false), 2000);
+        } catch {
+            toast.error("Failed to copy link");
         }
     };
 
@@ -365,6 +436,8 @@ export default function PlaylistDetailPage() {
         playTracks(tracks, index);
     };
 
+    const handleRowTouchEnd = useDoubleTapList(handlePlayTrack);
+
     const handleAddToQueue = (track: Track) => {
         const formattedTrack = {
             id: track.id,
@@ -446,7 +519,16 @@ export default function PlaylistDetailPage() {
                         <div className="flex items-end gap-6">
                             {/* Cover Art Mosaic */}
                             <div className="w-[140px] h-[140px] md:w-[192px] md:h-[192px] bg-[#0a0a0a] rounded-lg shadow-2xl shrink-0 overflow-hidden relative border-2 border-white/10">
-                                {coverUrls && coverUrls.length > 0 ? (
+                                {coverUrls && coverUrls.length === 1 ? (
+                                    <Image
+                                        src={api.getCoverArtUrl(coverUrls[0], 400)}
+                                        alt=""
+                                        fill
+                                        className="object-cover"
+                                        sizes="192px"
+                                        unoptimized
+                                    />
+                                ) : coverUrls && coverUrls.length > 1 ? (
                                     <div className="grid grid-cols-2 gap-0 w-full h-full">
                                         {coverUrls.slice(0, 4).map((url: string | undefined, index: number) => {
                                             if (!url) return null;
@@ -474,9 +556,65 @@ export default function PlaylistDetailPage() {
 
                             {/* Playlist Info */}
                             <div className="flex-1 min-w-0 pb-1">
-                                <h1 className="text-2xl md:text-4xl lg:text-5xl font-black text-white leading-tight line-clamp-2 mb-2 tracking-tighter">
-                                    {playlist.name}
-                                </h1>
+                                {playlist.isOwner && isEditingName ? (
+                                    <input
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        onKeyDown={async (e) => {
+                                            if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                editSaveRef.current = true;
+                                                const trimmed = editName.trim();
+                                                if (trimmed && trimmed !== playlist.name) {
+                                                    try {
+                                                        await updatePlaylist({ playlistId, data: { name: trimmed } });
+                                                        setIsEditingName(false);
+                                                    } catch {
+                                                        editSaveRef.current = false;
+                                                        toast.error("Failed to rename playlist");
+                                                    }
+                                                } else {
+                                                    setIsEditingName(false);
+                                                }
+                                            } else if (e.key === "Escape") {
+                                                editSaveRef.current = true;
+                                                setIsEditingName(false);
+                                            }
+                                        }}
+                                        onBlur={async () => {
+                                            if (editSaveRef.current) {
+                                                editSaveRef.current = false;
+                                                return;
+                                            }
+                                            const trimmed = editName.trim();
+                                            if (trimmed && trimmed !== playlist.name) {
+                                                try {
+                                                    await updatePlaylist({ playlistId, data: { name: trimmed } });
+                                                    setIsEditingName(false);
+                                                } catch {
+                                                    toast.error("Failed to rename playlist");
+                                                }
+                                            } else {
+                                                setIsEditingName(false);
+                                            }
+                                        }}
+                                        autoFocus
+                                        className="text-2xl md:text-4xl lg:text-5xl font-black text-white leading-tight tracking-tighter bg-transparent border-b border-white/30 outline-none w-full"
+                                    />
+                                ) : (
+                                    <h1
+                                        className={`text-2xl md:text-4xl lg:text-5xl font-black text-white leading-tight line-clamp-2 mb-2 tracking-tighter ${playlist.isOwner ? "cursor-text hover:underline hover:decoration-white/20 decoration-2 underline-offset-4" : ""}`}
+                                        onClick={() => {
+                                            if (playlist.isOwner) {
+                                                setEditName(playlist.name);
+                                                setIsEditingName(true);
+                                            }
+                                        }}
+                                    >
+                                        {playlist.name}
+                                    </h1>
+                                )}
 
                                 <div className="flex flex-wrap items-center gap-3 text-xs font-mono text-white/50 uppercase tracking-wider">
                                     {isShared && playlist.user?.username && (
@@ -550,6 +688,85 @@ export default function PlaylistDetailPage() {
                     )}
 
                     <div className="flex-1" />
+
+                    {/* Share Button */}
+                    {playlist.isOwner && (
+                        <div className="relative" data-share-popover>
+                            <button
+                                onClick={handleShare}
+                                disabled={shareLoading}
+                                className={cn(
+                                    "h-8 w-8 rounded-lg flex items-center justify-center transition-all",
+                                    showSharePopover
+                                        ? "text-[#fca208]"
+                                        : "text-white/30 hover:text-white/60",
+                                    shareLoading && "opacity-50 cursor-not-allowed"
+                                )}
+                                title="Share playlist"
+                            >
+                                {shareLoading ? (
+                                    <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : (
+                                    <Share2 className="w-5 h-5" />
+                                )}
+                            </button>
+
+                            {/* Share Popover */}
+                            {showSharePopover && shareUrl && (
+                                <div className="absolute right-0 top-full mt-2 z-50 w-80 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl shadow-black/50 p-3">
+                                    <div className="flex items-center gap-2 mb-2">
+                                        <LinkIcon className="w-3.5 h-3.5 text-[#fca200]" />
+                                        <span className="text-xs font-mono text-white/50 uppercase tracking-wider">
+                                            Share Link
+                                        </span>
+                                        <button
+                                            onClick={() => setShowSharePopover(false)}
+                                            className="ml-auto text-white/30 hover:text-white/60"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            readOnly
+                                            value={shareUrl}
+                                            className="flex-1 bg-black/40 border border-white/10 rounded px-2.5 py-1.5 text-xs font-mono text-white/70 outline-none select-all"
+                                            onClick={(e) => (e.target as HTMLInputElement).select()}
+                                        />
+                                        <button
+                                            onClick={handleCopyShareUrl}
+                                            className="h-8 px-3 rounded bg-[#fca200] hover:bg-[#f97316] text-black text-xs font-semibold flex items-center gap-1.5 transition-colors flex-shrink-0"
+                                        >
+                                            {shareCopied ? (
+                                                <Check className="w-3.5 h-3.5" />
+                                            ) : (
+                                                <Copy className="w-3.5 h-3.5" />
+                                            )}
+                                            {shareCopied ? "Copied" : "Copy"}
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={async () => {
+                                            if (!shareToken) return;
+                                            try {
+                                                await api.revokeShareLink(shareToken);
+                                                setShareUrl(null);
+                                                setShareToken(null);
+                                                setShowSharePopover(false);
+                                                toast.success("Share link revoked");
+                                            } catch {
+                                                toast.error("Failed to revoke share link");
+                                            }
+                                        }}
+                                        className="text-[10px] font-mono text-white/25 hover:text-red-400/70 transition-colors mt-1"
+                                    >
+                                        Revoke link
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* Hide Button */}
                     <button
@@ -731,9 +948,11 @@ export default function PlaylistDetailPage() {
                                         return (
                                             <div
                                                 key={playlistItem.id}
+                                                data-track-index={trackIndex}
                                                 onDoubleClick={() => handlePlayTrack(trackIndex)}
+                                                onTouchEnd={handleRowTouchEnd}
                                                 className={cn(
-                                                    "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,1fr)_80px] gap-4 px-4 py-2 rounded-lg hover:bg-white/[0.03] transition-all group cursor-pointer border border-transparent hover:border-white/5",
+                                                    "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,1fr)_80px] gap-4 px-4 py-2 rounded-lg hover:bg-white/[0.03] transition-all group cursor-pointer border border-transparent hover:border-white/5 touch-manipulation",
                                                     isCurrentlyPlaying && "bg-white/5 border-[#fca208]/30"
                                                 )}
                                             >

@@ -12,6 +12,7 @@ import { formatTime } from "@/utils/formatTime";
 import { shuffleArray } from "@/utils/shuffle";
 import { useToast } from "@/lib/toast-context";
 import { useMixQuery } from "@/hooks/useQueries";
+import { useDoubleTapList } from "@/hooks/useDoubleTap";
 
 interface MixTrack {
     id: string;
@@ -106,6 +107,8 @@ export default function MixPage() {
         const tracks = formatTracksForPlayback(mix.tracks);
         playTracks(tracks, index);
     };
+
+    const handleRowTouchEnd = useDoubleTapList(handlePlayTrack);
 
     const handleShuffle = () => {
         if (!mix?.tracks) return;
@@ -306,9 +309,11 @@ export default function MixPage() {
                                 return (
                                     <div
                                         key={track.id}
+                                        data-track-index={index}
                                         onDoubleClick={() => handlePlayTrack(index)}
+                                        onTouchEnd={handleRowTouchEnd}
                                         className={cn(
-                                            "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,1fr)_80px] gap-4 px-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer",
+                                            "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,1fr)_80px] gap-4 px-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer touch-manipulation",
                                             isCurrentlyPlaying && "bg-white/10"
                                         )}
                                     >

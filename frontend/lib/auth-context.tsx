@@ -33,7 +33,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const publicPaths = ["/login", "/register", "/onboarding", "/sync"];
+const publicPaths = ["/login", "/register", "/onboarding", "/sync", "/share"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 }
 
                 // If not on a public path, check if we need onboarding
-                if (!publicPaths.includes(pathname)) {
+                if (!publicPaths.some(p => pathname === p || pathname.startsWith(p + "/"))) {
                     // Check if any users exist in the system
                     try {
                         const status = await api.get<{ hasAccount: boolean }>(

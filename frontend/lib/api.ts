@@ -668,6 +668,13 @@ class ApiClient {
         });
     }
 
+    async updatePlaylist(id: string, data: { name?: string; isPublic?: boolean }) {
+        return this.request<ApiData>(`/playlists/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+        });
+    }
+
     async deletePlaylist(id: string) {
         return this.request<void>(`/playlists/${id}`, {
             method: "DELETE",
@@ -1701,6 +1708,23 @@ class ApiClient {
         id: string
     ): Promise<{ success: boolean; newJobId?: string }> {
         return this.post(`/notifications/downloads/${id}/retry`);
+    }
+
+    // Share Links
+    async createShareLink(
+        entityType: "playlist" | "track" | "album",
+        entityId: string
+    ): Promise<{ token: string; url: string; existing?: boolean }> {
+        return this.request<{ token: string; url: string; existing?: boolean }>("/share", {
+            method: "POST",
+            body: JSON.stringify({ entityType, entityId }),
+        });
+    }
+
+    async revokeShareLink(token: string): Promise<{ message: string }> {
+        return this.request<{ message: string }>(`/share/${token}`, {
+            method: "DELETE",
+        });
     }
 }
 

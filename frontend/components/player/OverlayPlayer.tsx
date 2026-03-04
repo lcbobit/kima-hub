@@ -29,7 +29,7 @@ import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useToast } from "@/lib/toast-context";
 import { SeekSlider } from "./SeekSlider";
 import { useFeatures } from "@/lib/features-context";
-import { LyricsCrawl } from "@/components/lyrics/LyricsCrawl";
+import { MobileLyricsView } from "@/components/lyrics/MobileLyricsView";
 import { useLyricsToggle } from "@/hooks/useLyricsToggle";
 
 export function OverlayPlayer() {
@@ -84,9 +84,6 @@ export function OverlayPlayer() {
 
     const canSkip = playbackType === "track";
 
-    const handleSeek = (time: number) => {
-        seek(time);
-    };
 
     // Swipe handlers for track skipping
     const handleTouchStart = (e: React.TouchEvent) => {
@@ -173,69 +170,68 @@ export function OverlayPlayer() {
 
             {/* Main Content - Portrait vs Landscape */}
             <div className="flex-1 flex flex-col landscape:flex-row items-center justify-center px-6 pb-6 landscape:px-8 landscape:gap-8 overflow-hidden">
-                {/* Lyrics crawl above artwork */}
-                {isLyricsActive && isMobileOrTablet && (
-                    <div className="w-full max-w-[280px] h-16 flex-shrink-0 mb-3">
-                        <LyricsCrawl />
+                {/* Artwork / Lyrics swap */}
+                {isLyricsActive && isMobileOrTablet ? (
+                    <div className="w-full max-w-[280px] landscape:max-w-[220px] landscape:w-[220px] aspect-square flex-shrink-0 relative mb-6 landscape:mb-0 rounded-2xl bg-[#0a0a0a]/90 border border-white/[0.06]">
+                        <MobileLyricsView />
+                    </div>
+                ) : (
+                    <div
+                        className="w-full max-w-[280px] landscape:max-w-[220px] landscape:w-[220px] aspect-square flex-shrink-0 relative mb-6 landscape:mb-0"
+                        style={{
+                            transform: `translateX(${swipeOffset * 0.5}px)`,
+                            opacity: 1 - Math.abs(swipeOffset) / 200,
+                        }}
+                    >
+                        {/* Glow effect */}
+                        <div
+                            className={cn(
+                                "absolute inset-0 rounded-2xl blur-2xl opacity-50",
+                                vibeMode
+                                    ? "bg-gradient-to-br from-brand/30 via-transparent to-purple-500/30"
+                                    : "bg-gradient-to-br from-brand/20 via-transparent to-[#f97316]/20"
+                            )}
+                        />
+
+                        {/* Album art */}
+                        <div className="relative w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded-2xl overflow-hidden shadow-2xl">
+                            {coverUrl ? (
+                                <Image
+                                    key={coverUrl}
+                                    src={coverUrl}
+                                    alt={title}
+                                    fill
+                                    sizes="280px"
+                                    className="object-cover"
+                                    priority
+                                    unoptimized
+                                />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                    <MusicIcon className="w-24 h-24 text-gray-600" />
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Swipe hint indicators */}
+                        {canSkip &&
+                            isMobileOrTablet &&
+                            Math.abs(swipeOffset) > 20 && (
+                                <div
+                                    className={cn(
+                                        "absolute top-1/2 -translate-y-1/2 text-white/60",
+                                        swipeOffset > 0 ? "-left-8" : "-right-8"
+                                    )}
+                                >
+                                    {swipeOffset > 0 ? (
+                                        <SkipBack className="w-6 h-6" />
+                                    ) : (
+                                        <SkipForward className="w-6 h-6" />
+                                    )}
+                                </div>
+                            )}
                     </div>
                 )}
-
-                {/* Artwork */}
-                <div
-                    className="w-full max-w-[280px] landscape:max-w-[220px] landscape:w-[220px] aspect-square flex-shrink-0 relative mb-6 landscape:mb-0"
-                    style={{
-                        transform: `translateX(${swipeOffset * 0.5}px)`,
-                        opacity: 1 - Math.abs(swipeOffset) / 200,
-                    }}
-                >
-                    {/* Glow effect */}
-                    <div
-                        className={cn(
-                            "absolute inset-0 rounded-2xl blur-2xl opacity-50",
-                            vibeMode
-                                ? "bg-gradient-to-br from-brand/30 via-transparent to-purple-500/30"
-                                : "bg-gradient-to-br from-brand/20 via-transparent to-[#f97316]/20"
-                        )}
-                    />
-
-                    {/* Album art */}
-                    <div className="relative w-full h-full bg-gradient-to-br from-[#2a2a2a] to-[#1a1a1a] rounded-2xl overflow-hidden shadow-2xl">
-                        {coverUrl ? (
-                            <Image
-                                key={coverUrl}
-                                src={coverUrl}
-                                alt={title}
-                                fill
-                                sizes="280px"
-                                className="object-cover"
-                                priority
-                                unoptimized
-                            />
-                        ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                                <MusicIcon className="w-24 h-24 text-gray-600" />
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Swipe hint indicators */}
-                    {canSkip &&
-                        isMobileOrTablet &&
-                        Math.abs(swipeOffset) > 20 && (
-                            <div
-                                className={cn(
-                                    "absolute top-1/2 -translate-y-1/2 text-white/60",
-                                    swipeOffset > 0 ? "-left-8" : "-right-8"
-                                )}
-                            >
-                                {swipeOffset > 0 ? (
-                                    <SkipBack className="w-6 h-6" />
-                                ) : (
-                                    <SkipForward className="w-6 h-6" />
-                                )}
-                            </div>
-                        )}
-                </div>
 
                 {/* Info & Controls Section */}
                 <div className="w-full max-w-[320px] landscape:max-w-[280px] landscape:flex-1 flex flex-col">
@@ -279,7 +275,7 @@ export function OverlayPlayer() {
                         <SeekSlider
                             progress={progress}
                             duration={duration}
-                            onSeek={handleSeek}
+                            onSeek={seek}
                             canSeek={canSeek}
                             hasMedia={hasMedia}
                             downloadProgress={downloadProgress}

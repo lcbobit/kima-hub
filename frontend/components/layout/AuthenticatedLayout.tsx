@@ -18,7 +18,7 @@ import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useIsTV } from "@/lib/tv-utils";
 import { useActivityPanel } from "@/hooks/useActivityPanel";
 
-const publicPaths = ["/login", "/register", "/onboarding", "/sync"];
+const publicPaths = ["/login", "/register", "/onboarding", "/sync", "/share"];
 
 export function AuthenticatedLayout({ children }: { children: ReactNode }) {
     const { isAuthenticated, isLoading } = useAuth();
@@ -28,16 +28,17 @@ export function AuthenticatedLayout({ children }: { children: ReactNode }) {
     const isTV = useIsTV();
     const isMobileOrTablet = isMobile || isTablet;
     const activityPanel = useActivityPanel();
+    const { toggle, open, close, setActiveTab } = activityPanel;
 
     // Listen for activity panel events (toggle/open/close/tab)
     useEffect(() => {
-        const handleToggle = () => activityPanel.toggle();
-        const handleOpen = () => activityPanel.open();
-        const handleClose = () => activityPanel.close();
+        const handleToggle = () => toggle();
+        const handleOpen = () => open();
+        const handleClose = () => close();
         const handleSetTab = (
             e: CustomEvent<{ tab: "notifications" | "active" | "history" | "settings" }>
         ) => {
-            activityPanel.setActiveTab(e.detail.tab);
+            setActiveTab(e.detail.tab);
         };
         window.addEventListener("toggle-activity-panel", handleToggle);
         window.addEventListener("open-activity-panel", handleOpen);
@@ -56,9 +57,11 @@ export function AuthenticatedLayout({ children }: { children: ReactNode }) {
                 handleSetTab as EventListener
             );
         };
-    }, [activityPanel]);
+    }, [toggle, open, close, setActiveTab]);
 
-    const isPublicPage = publicPaths.includes(pathname);
+    const isPublicPage = publicPaths.some(
+        (p) => pathname === p || pathname.startsWith(p + "/")
+    );
 
     // Show loading state only on protected pages
     if (!isPublicPage && isLoading) {

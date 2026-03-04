@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { Play, Pause, Volume2, Music } from "lucide-react";
 import { cn } from "@/utils/cn";
 import Image from "next/image";
@@ -30,7 +30,7 @@ export const PopularTracks: React.FC<PopularTracksProps> = ({
     previewPlaying,
     onPreview,
 }) => {
-
+    const lastTapRef = useRef<{ time: number; index: number }>({ time: 0, index: -1 });
 
     return (
         <section>
@@ -54,9 +54,10 @@ export const PopularTracks: React.FC<PopularTracksProps> = ({
                             data-track-row
                             data-tv-card
                             data-tv-card-index={index}
+                            data-track-index={index}
                             tabIndex={0}
                             className={cn(
-                                "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(80px,1fr)_80px] gap-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer",
+                                "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(80px,1fr)_80px] gap-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer touch-manipulation",
                                 isPlaying && "bg-white/10"
                             )}
                             onDoubleClick={(e) => {
@@ -64,6 +65,23 @@ export const PopularTracks: React.FC<PopularTracksProps> = ({
                                     onPreview(track, e);
                                 } else {
                                     onPlayTrack(track);
+                                }
+                            }}
+                            onTouchEnd={(e) => {
+                                const idx = Number(e.currentTarget.dataset.trackIndex);
+                                if (isNaN(idx)) return;
+                                const now = Date.now();
+                                if (now - lastTapRef.current.time < 300 && lastTapRef.current.index === idx) {
+                                    const t = tracks[idx];
+                                    const unowned = !t?.album?.id || !t?.album?.title || t.album.title === "Unknown Album";
+                                    if (unowned) {
+                                        onPreview(t, e as unknown as React.MouseEvent);
+                                    } else {
+                                        onPlayTrack(t);
+                                    }
+                                    lastTapRef.current = { time: 0, index: -1 };
+                                } else {
+                                    lastTapRef.current = { time: now, index: idx };
                                 }
                             }}
                         >

@@ -32,8 +32,16 @@ function pauseVibe(): void {
 
 function scheduleVibeResume(): void {
     if (quietTimer) clearTimeout(quietTimer);
-    quietTimer = setTimeout(() => {
+    quietTimer = setTimeout(async () => {
         quietTimer = null;
+        // Only resume if audio analysis is truly idle -- not just between batches
+        const audioRemaining = await prisma.track.count({
+            where: { analysisStatus: { in: ["processing", "pending"] } },
+        }).catch(() => 0);
+        if (audioRemaining > 0) {
+            logger.debug(`[AudioSub] ${audioRemaining} audio tracks still pending/processing, deferring vibe resume`);
+            return;
+        }
         vibePaused = false;
         vibeQueue.resume().catch((err: Error) => {
             logger.warn(`[AudioSub] Failed to resume vibe queue: ${err.message}`);
@@ -80,7 +88,9 @@ export async function startAudioCompletionSubscriber(): Promise<void> {
     }).catch(() => 0);
 
     if (audioProcessing === 0) {
-        vibeQueue.resume().catch(() => {});
+        vibeQueue.resume().catch((err: Error) => {
+            logger.warn(`[AudioSub] Failed to resume vibe queue at startup: ${err.message}`);
+        });
     } else {
         logger.debug(`[AudioSub] ${audioProcessing} tracks in audio processing, keeping vibe queue paused`);
     }
@@ -115,41 +125,10 @@ export async function startAudioCompletionSubscriber(): Promise<void> {
         pauseVibe();
         scheduleVibeResume();
 
-        // Defensive guard: verify track analysisStatus in DB before queuing vibe.
-        // Protects against pub/sub messages from failed Essentia runs.
-        const track = await prisma.track
-            .findUnique({
-                where: { id: event.trackId },
-                select: { analysisStatus: true, vibeAnalysisStatus: true },
-            })
-            .catch(() => null);
-
-        if (!track) {
-            logger.warn(`[AudioSub] Track ${event.trackId} not found, skipping vibe queue`);
-            return;
-        }
-
-        if (track.analysisStatus !== "completed") {
-            logger.warn(
-                `[AudioSub] Track ${event.trackId} analysisStatus=${track.analysisStatus}, skipping vibe`,
-            );
-            return;
-        }
-
-        if (track.vibeAnalysisStatus === "completed") {
-            return; // Already has vibe embedding
-        }
-
-        try {
-            await vibeQueue.add(
-                "embed",
-                { trackId: event.trackId, filePath: event.filePath },
-                { jobId: `vibe-${event.trackId}` }, // dedup — no-op if already queued
-            );
-            logger.debug(`[AudioSub] Queued vibe job for track ${event.trackId}`);
-        } catch (err) {
-            logger.error(`[AudioSub] Failed to queue vibe job: ${(err as Error).message}`);
-        }
+        // Don't enqueue vibe jobs from here -- the executeVibePhase sweep
+        // in unifiedEnrichment.ts handles batch queuing after audio is fully
+        // idle. Enqueueing per-track here races with audio batches and causes
+        // both ML models to compete for resources simultaneously.
     });
 
     subscriber.on("error", (err) => {

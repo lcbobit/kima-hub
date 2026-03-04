@@ -6,6 +6,7 @@ import type { Track, Album, AlbumSource } from "../types";
 import type { ColorPalette } from "@/hooks/useImageColor";
 import { formatTime } from "@/utils/formatTime";
 import { formatNumber } from "@/utils/formatNumber";
+import { useDoubleTap } from "@/hooks/useDoubleTap";
 
 interface TrackListProps {
     tracks: Track[];
@@ -81,9 +82,9 @@ const TrackRow = memo(
         }, [track, index, onPlayTrack]);
 
         const handleRowClick = useCallback(
-            (e: React.MouseEvent) => {
+            (e?: React.MouseEvent) => {
                 // For unowned tracks, play preview instead of local file
-                if (isPreviewOnly) {
+                if (isPreviewOnly && e) {
                     onPreview(track, e);
                 } else {
                     onPlayTrack(track, index);
@@ -92,6 +93,8 @@ const TrackRow = memo(
             [isPreviewOnly, track, index, onPlayTrack, onPreview]
         );
 
+        const doubleTapProps = useDoubleTap(handleRowClick);
+
         return (
             <div
                 data-track-row
@@ -99,7 +102,7 @@ const TrackRow = memo(
                 data-tv-card-index={index}
                 tabIndex={0}
                 className={cn(
-                    "group relative flex items-center gap-3 md:gap-4 px-3 md:px-4 py-3 hover:bg-[#141414] transition-colors cursor-pointer",
+                    "group relative flex items-center gap-3 md:gap-4 px-3 md:px-4 py-3 hover:bg-[#141414] transition-colors cursor-pointer touch-manipulation",
                     isPlaying && "bg-[#1a1a1a] border-l-2",
                     isPreviewOnly && "opacity-70 hover:opacity-90"
                 )}
@@ -108,7 +111,7 @@ const TrackRow = memo(
                         ? { borderLeftColor: colors?.vibrant || "#a855f7" }
                         : undefined
                 }
-                onDoubleClick={handleRowClick}
+                {...doubleTapProps}
                 onKeyDown={(e) => {
                     if (e.key === "Enter") {
                         e.preventDefault();

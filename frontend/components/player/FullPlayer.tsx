@@ -25,9 +25,14 @@ import {
     AudioWaveform,
     RefreshCw,
     MicVocal,
+    ListMusic,
+    ListPlus,
 } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
 import { useState, useMemo } from "react";
 import { useToast } from "@/lib/toast-context";
+import { PlaylistSelector } from "@/components/ui/PlaylistSelector";
+import { useAddToPlaylistMutation } from "@/hooks/useQueries";
 import { KeyboardShortcutsTooltip } from "./KeyboardShortcutsTooltip";
 import { cn } from "@/utils/cn";
 import { useFeatures } from "@/lib/features-context";
@@ -84,9 +89,13 @@ export function FullPlayer() {
         stopVibeMode,
     } = useAudioControls();
 
+    const router = useRouter();
+    const pathname = usePathname();
     const [isVibeLoading, setIsVibeLoading] = useState(false);
+    const [showPlaylistSelector, setShowPlaylistSelector] = useState(false);
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
     const { handleLyricsToggle, isLyricsActive } = useLyricsToggle({ isMobile: false });
+    const { mutateAsync: addToPlaylist } = useAddToPlaylistMutation();
 
     // Get current track's audio features for vibe comparison
     const currentTrackFeatures = queue[currentIndex]?.audioFeatures || null;
@@ -143,9 +152,6 @@ export function FullPlayer() {
         }
     };
 
-    const handleSeek = (time: number) => {
-        seek(time);
-    };
 
     const { title, subtitle, coverUrl, artistLink, mediaLink, hasMedia } = useMediaInfo(100);
 
@@ -155,6 +161,7 @@ export function FullPlayer() {
     };
 
     return (
+        <>
         <div className="relative flex-shrink-0">
             <div className="bg-black border-t border-white/[0.08] h-24">
                 {/* Brand accent line */}
@@ -473,6 +480,32 @@ export function FullPlayer() {
                                     <MicVocal className="w-4 h-4" />
                                 </button>
                             )}
+
+                            {/* Queue Toggle */}
+                            <button
+                                onClick={() => router.push("/queue")}
+                                className={`p-1.5 rounded-md transition-colors ${
+                                    pathname === "/queue"
+                                        ? "text-[#fca200]"
+                                        : "text-white/40 hover:text-white/70"
+                                }`}
+                                aria-label="View play queue"
+                                title="Play queue"
+                            >
+                                <ListMusic className="w-4 h-4" />
+                            </button>
+
+                            {/* Add to Playlist */}
+                            {playbackType === "track" && currentTrack && (
+                                <button
+                                    onClick={() => setShowPlaylistSelector(true)}
+                                    className="p-1.5 rounded-md transition-colors text-white/40 hover:text-white/70"
+                                    aria-label="Add to playlist"
+                                    title="Add to playlist"
+                                >
+                                    <ListPlus className="w-4 h-4" />
+                                </button>
+                            )}
                         </div>
 
                         {/* Progress Bar */}
@@ -491,7 +524,7 @@ export function FullPlayer() {
                             <SeekSlider
                                 progress={progress}
                                 duration={duration}
-                                onSeek={handleSeek}
+                                onSeek={seek}
                                 canSeek={canSeek}
                                 hasMedia={hasMedia}
                                 downloadProgress={downloadProgress}
@@ -573,5 +606,20 @@ export function FullPlayer() {
                 </div>
             </div>
         </div>
+        {showPlaylistSelector && currentTrack && (
+            <PlaylistSelector
+                isOpen={showPlaylistSelector}
+                onSelectPlaylist={async (playlistId) => {
+                    try {
+                        await addToPlaylist({ playlistId, trackId: currentTrack.id });
+                        setShowPlaylistSelector(false);
+                    } catch {
+                        toast.error("Failed to add to playlist");
+                    }
+                }}
+                onClose={() => setShowPlaylistSelector(false)}
+            />
+        )}
+        </>
     );
 }

@@ -76,8 +76,9 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
         }
 
         // Try Wikidata first (only if we have a real MBID)
+        // Preserve existing heroUrl (e.g., from local file found during scan)
         let summary = null;
-        let heroUrl = null;
+        let heroUrl = artist.heroUrl || null;
         let genres: string[] = [];
 
         if (!artist.mbid.startsWith("temp-")) {
@@ -91,9 +92,11 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
                 );
                 if (wikidataInfo) {
                     summary = wikidataInfo.summary;
-                    heroUrl = wikidataInfo.heroUrl;
+                    if (!heroUrl && wikidataInfo.heroUrl) {
+                        heroUrl = wikidataInfo.heroUrl;
+                        imageSource = "wikidata";
+                    }
                     if (summary) summarySource = "wikidata";
-                    if (heroUrl) imageSource = "wikidata";
                     logger.debug(
                         `${logPrefix} Wikidata: SUCCESS (image: ${
                             heroUrl ? "yes" : "no"
@@ -242,8 +245,9 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
             if (localHeroUrl) {
                 logger.debug(`${logPrefix} Image saved locally: ${localHeroUrl}`);
             } else {
-                logger.debug(`${logPrefix} Failed to download image, keeping external URL`);
-                localHeroUrl = heroUrl; // Fallback to external URL if download fails
+                // Download failed -- fall back to external URL; re-read below will prefer any native path
+                localHeroUrl = heroUrl;
+                logger.debug(`${logPrefix} Failed to download image, using: ${localHeroUrl}`);
             }
         } else if (heroUrl) {
             localHeroUrl = heroUrl; // Already a native path
@@ -259,12 +263,20 @@ export async function enrichSimilarArtist(artist: Artist): Promise<void> {
                   }))
                 : null;
 
-        // Update artist with enriched data
+        // Re-read current heroUrl to avoid clobbering scanner-written local images
+        const currentArtist = await prisma.artist.findUnique({
+            where: { id: artist.id },
+            select: { heroUrl: true },
+        });
+        const finalHeroUrl = (currentArtist?.heroUrl && isNativePath(currentArtist.heroUrl))
+            ? currentArtist.heroUrl
+            : localHeroUrl;
+
         await prisma.artist.update({
             where: { id: artist.id },
             data: {
                 summary,
-                heroUrl: localHeroUrl,
+                heroUrl: finalHeroUrl,
                 similarArtistsJson,
                 genres: genres.length > 0 ? genres : undefined,
                 lastEnriched: new Date(),

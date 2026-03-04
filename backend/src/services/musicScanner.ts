@@ -18,6 +18,7 @@ import {
     sanitizeTagString,
 } from "../utils/artistNormalization";
 import { backfillAllArtistCounts } from "./artistCountsService";
+import { checkLocalArtistImage } from "./imageStorage";
 
 // Supported audio formats
 const AUDIO_EXTENSIONS = new Set([
@@ -739,6 +740,25 @@ export class MusicScannerService {
                         enrichmentStatus: "pending",
                     },
                 });
+            }
+
+            // Check for local artist image if none set yet
+            if (!artist.heroUrl) {
+                const pathParts = relativePath.split(path.sep);
+                for (let i = pathParts.length - 2; i >= 0; i--) {
+                    const candidateDir = pathParts.slice(0, i + 1).join(path.sep);
+                    const localImage = await checkLocalArtistImage(musicPath, candidateDir, artist.id);
+                    if (localImage) {
+                        const updated = await prisma.artist.updateMany({
+                            where: { id: artist.id, heroUrl: null },
+                            data: { heroUrl: localImage },
+                        });
+                        if (updated.count > 0) {
+                            artist = { ...artist, heroUrl: localImage };
+                        }
+                        break;
+                    }
+                }
             }
         }
 

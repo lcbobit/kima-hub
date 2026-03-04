@@ -86,24 +86,19 @@ export async function downloadAndStoreImage(
 }
 
 /**
- * Check if a local image exists
- */
-export function localImageExists(nativePath: string): boolean {
-    if (!nativePath.startsWith("native:")) return false;
-
-    const relativePath = nativePath.replace("native:", "");
-    const fullPath = path.join(getCoversBasePath(), relativePath);
-    return fs.existsSync(fullPath);
-}
-
-/**
  * Get the full filesystem path for a native image path
  */
 export function getLocalImagePath(nativePath: string): string | null {
     if (!nativePath.startsWith("native:")) return null;
 
     const relativePath = nativePath.replace("native:", "");
-    const fullPath = path.join(getCoversBasePath(), relativePath);
+    const basePath = getCoversBasePath();
+    const resolvedBase = path.resolve(basePath);
+    const fullPath = path.resolve(basePath, relativePath);
+
+    if (!fullPath.startsWith(resolvedBase + path.sep) && fullPath !== resolvedBase) {
+        return null;
+    }
 
     if (!fs.existsSync(fullPath)) return null;
     return fullPath;
@@ -122,6 +117,47 @@ export function deleteLocalImage(nativePath: string): boolean {
     } catch {
         return false;
     }
+}
+
+/**
+ * Check for a local artist image file in the artist's music directory.
+ * Copies to the image cache if found and returns a native path.
+ */
+export async function checkLocalArtistImage(
+    musicPath: string,
+    artistDirName: string,
+    artistId: string
+): Promise<string | null> {
+    const artistDir = path.join(musicPath, artistDirName);
+
+    // Path traversal containment: ensure the resolved artist dir is inside musicPath
+    const resolvedMusicPath = path.resolve(musicPath);
+    const resolvedArtistDir = path.resolve(musicPath, artistDirName);
+    if (!resolvedArtistDir.startsWith(resolvedMusicPath + path.sep)) {
+        return null;
+    }
+
+    const candidates = [
+        "artist.jpg", "artist.png", "artist.webp",
+        "folder.jpg", "folder.png", "folder.webp",
+    ];
+
+    for (const filename of candidates) {
+        const filePath = path.join(artistDir, filename);
+        try {
+            const lstat = await fs.promises.lstat(filePath);
+            if (lstat.isSymbolicLink()) continue;
+            if (lstat.isFile() && lstat.size > 1000) {
+                const dirPath = ensureCoversDir(ARTIST_IMAGES_DIR);
+                const ext = path.extname(filename);
+                const cachePath = path.join(dirPath, `${artistId}${ext}`);
+                await fs.promises.copyFile(filePath, cachePath);
+                logger.debug(`[ImageStorage] Local artist image found: ${filePath}`);
+                return `native:${ARTIST_IMAGES_DIR}/${artistId}${ext}`;
+            }
+        } catch {}
+    }
+    return null;
 }
 
 /**
@@ -178,5 +214,13 @@ export function getResizedImagePath(nativePath: string, width: number): string |
     const relativePath = nativePath.replace("native:", "");
     const parsed = path.parse(relativePath);
     const resizedRelative = path.join(parsed.dir, `${parsed.name}_w${width}.jpg`);
-    return path.join(getCoversBasePath(), resizedRelative);
+    const basePath = getCoversBasePath();
+    const resolvedBase = path.resolve(basePath);
+    const fullPath = path.resolve(basePath, resizedRelative);
+
+    if (!fullPath.startsWith(resolvedBase + path.sep) && fullPath !== resolvedBase) {
+        return null;
+    }
+
+    return fullPath;
 }

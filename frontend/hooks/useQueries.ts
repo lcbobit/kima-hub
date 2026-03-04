@@ -690,12 +690,10 @@ export function useAddToPlaylistMutation() {
             playlistId: string;
             trackId: string;
         }) => api.addTrackToPlaylist(playlistId, trackId),
-        onSuccess: (_, variables) => {
-            // Invalidate the specific playlist query
+        onSettled: (_, __, variables) => {
             queryClient.invalidateQueries({
                 queryKey: queryKeys.playlist(variables.playlistId),
             });
-            // Also invalidate the playlists list
             queryClient.invalidateQueries({
                 queryKey: queryKeys.playlists(),
             });
@@ -732,15 +730,69 @@ export function useCreatePlaylistMutation() {
     });
 }
 
-/**
- * Hook to delete a playlist with cache invalidation
- *
- * @returns Mutation object with mutate function
- *
- * @example
- * const { mutate: deletePlaylist } = useDeletePlaylistMutation();
- * deletePlaylist("playlist-123");
- */
+export function useRemoveFromPlaylistMutation() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({
+            playlistId,
+            trackId,
+        }: {
+            playlistId: string;
+            trackId: string;
+        }) => api.removeTrackFromPlaylist(playlistId, trackId),
+        onMutate: async (variables) => {
+            await queryClient.cancelQueries({ queryKey: queryKeys.playlist(variables.playlistId) });
+            const previous = queryClient.getQueryData(queryKeys.playlist(variables.playlistId));
+            queryClient.setQueryData(queryKeys.playlist(variables.playlistId), (old: Record<string, unknown> | undefined) => {
+                if (!old || !Array.isArray(old.items)) return old;
+                return {
+                    ...old,
+                    items: (old.items as Array<{ track?: { id?: string } }>).filter(
+                        (item) => item.track?.id !== variables.trackId
+                    ),
+                };
+            });
+            return { previous };
+        },
+        onError: (_err, variables, context) => {
+            if (context?.previous) {
+                queryClient.setQueryData(queryKeys.playlist(variables.playlistId), context.previous);
+            }
+        },
+        onSettled: (_, __, variables) => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.playlist(variables.playlistId),
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.playlists(),
+            });
+        },
+    });
+}
+
+export function useUpdatePlaylistMutation() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: ({
+            playlistId,
+            data,
+        }: {
+            playlistId: string;
+            data: { name?: string; isPublic?: boolean };
+        }) => api.updatePlaylist(playlistId, data),
+        onSuccess: (_, variables) => {
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.playlist(variables.playlistId),
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.playlists(),
+            });
+        },
+    });
+}
+
 export function useDeletePlaylistMutation() {
     const queryClient = useQueryClient();
 

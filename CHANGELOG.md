@@ -5,6 +5,74 @@ All notable changes to Kima will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-03-03
+
+Closes #121, #125, #136, #138. Partially addresses #139, #25, #108, #30.
+
+### Added
+
+- **Share links**: Generate shareable URLs for playlists, tracks, and albums. Public playback page with built-in audio player, no account required. Token-based access with optional expiry and play count limits. Share popover in playlist page with copy-to-clipboard and revoke.
+- **Playlist inline rename**: Click playlist title to edit in place. Enter to save, Escape to cancel, click-away to save. Input stays open on save failure for retry.
+- **Player queue and add-to-playlist buttons**: Queue navigation button and add-current-track-to-playlist button in the full player bar.
+- **Local artist images**: Library scanner discovers `artist.jpg`/`folder.jpg`/`.png`/`.webp` in music directories and copies them to the image cache. Enrichment preserves local images over external URLs.
+- **Playback queue expanded to 2000 items**: Queue storage increased from 100 to 2000 tracks (frontend and backend).
+- **GHCR publishing**: Docker images now published to GitHub Container Registry alongside Docker Hub on tagged releases. Credit to @SupremeMortal (#48).
+- **#134 Lidarr batch album fetching**: Large Lidarr libraries no longer crash with V8 string overflow -- albums are fetched in paginated batches. Credit to @cachamber.
+- **#132 Preview volume sync**: Preview audio volume now syncs with the global player volume. Credit to @cachamber.
+- **Safari audio session hint**: Explicitly sets `navigator.audioSession.type = "playback"` on Safari 16.4+ to ensure the correct AVAudioSession category before first playback.
+
+### Fixed
+
+- **Security: path traversal in cover art serving**: `getLocalImagePath` and `getResizedImagePath` lacked path containment checks. Added `path.resolve` + `startsWith` guards matching the existing `validateCoverPath` pattern. Removed dead `localImageExists` function.
+- **Security: share stream missing error handlers**: Raw `createReadStream.pipe(res)` replaced with `streamFileWithRangeSupport` utility for proper stream error handling and file descriptor cleanup on client disconnect.
+- **Security: global JSON body limit too broad**: 5mb limit applied to all routes. Replaced with conditional middleware -- 5mb for playback state only, 1mb for everything else.
+- **Enrichment: manual enrich overwrites local artist images**: `applyArtistEnrichment` unconditionally replaced `heroUrl` with external URLs. Added DB re-read + native path guard matching the background worker.
+- **Enrichment: stale heroUrl reference in download fallback**: Removed misleading `artist.heroUrl` check on stale function parameter. The downstream DB re-read handles native path preservation.
+- **Scanner: wrong artist image in deep directory structures**: Directory iteration went shallow-to-deep, matching genre-level `folder.jpg` before artist-level. Reversed to deep-to-shallow.
+- **UI: playlist rename and add-to-playlist fail silently**: Added try/catch with toast errors. Rename input stays open on failure for retry.
+- **Mobile: double-tap to play tracks not working**: `onDoubleClick` on track rows does not fire on touch devices. Added `touch-action: manipulation` and custom double-tap detection via `onTouchEnd` with 300ms window across all 7 track list components. Desktop double-click preserved.
+- **Mobile lyrics: text clipped by album art container**: Lyrics crawl rendered above album art but was clipped by the parent's `overflow-hidden`. Replaced with a full lyrics view that swaps out the album art when active. Synced lyrics auto-scroll to the active line; plain lyrics are freely scrollable.
+- **Enrichment: audio analysis and vibe embeddings running simultaneously**: Both ML models (Essentia + CLAP) competed for CPU/GPU, causing UI flickering. Vibe phase now defers until audio analysis is fully idle. Removed per-track vibe job queuing from the audio completion subscriber -- `executeVibePhase` sweep is now the sole queuing path.
+- **UI: activity panel reopens after closing**: `useEffect` dependency on the full `activityPanel` object caused event listener teardown/re-register on every open/close. Destructured to stable `useCallback` refs.
+- **UI: silent failures on playlist operations**: `handleRemoveTrack`, `handleToggleHide`, `handleRemovePendingTrack`, and `handleDeletePlaylist` caught errors with only `console.error`. Added `toast.error` to all four.
+- **Player: dead `handleSeek` wrappers**: Removed pass-through wrappers in FullPlayer, OverlayPlayer, and MiniPlayer. `seek` passed directly to `SeekSlider`.
+- **Artist page popular tracks**: Improved title matching with three-tier fallback (exact, normalized, aggressively stripped) so remaster/deluxe variants match correctly as owned. Unowned tracks now show artist hero image instead of gray placeholder.
+- **Card hover overlay regression**: Dark gradient overlays caused blackout effect on album art hover. Made overlay conditional on playable cards, softened opacity on grid cards.
+- **Album navigation delay**: First click to album pages felt unresponsive due to `prefetch={false}` on all card Links. Enabled Next.js prefetching for instant navigation.
+- **GHCR image name casing**: `github.repository_owner` preserves uppercase but GHCR requires all-lowercase. Compute image name at runtime with bash lowercase conversion.
+- **#128 Subsonic rate limit too low for Symfonium sync**: Large libraries (2000+ songs) hit the 300 req/min rate limit during Symfonium sync. Bumped to 1500 req/min -- self-hosted service behind auth, no brute-force risk.
+- **Mobile: lock screen always shows "playing" / steals Bluetooth/CarPlay**: Removed the silence keepalive system that looped near-silent audio to maintain the OS audio session while paused.
+- **Mobile: resumeWithGesture shows "playing" when blocked by OS**: Now awaits confirmation and reverts on failure.
+- **Audiobook progress overwritten on track end**: Completion flag was immediately overwritten by the pause-triggered progress save. Fixed ordering.
+- **Duplicate "play" event firing**: Now emits only on `playing` (when audio is actually producing sound).
+- **MediaSession metadata unnecessary re-renders**: Removed `isPlaying` from metadata effect deps.
+- **Mobile: lock screen stuck on "playing" after errors**: Added `error` event to MediaSession playbackState listeners.
+- **Mobile: audio stops silently in background**: Network retry now emits proper error for UI recovery.
+- **Mobile: foreground recovery too narrow**: Clears error on foreground return.
+- **Podcast progress bar reverts on pause**: Now updates React state after API save.
+- **Mobile: permanent pause after phone call/Siri**: Tracks pre-interruption state and attempts auto-resume.
+- **Enrichment: `isPaused` permanently stuck after Stop**: Moved `isStopping` handler to top of cycle.
+- **Enrichment: vibe re-run doesn't restart cycle**: Now calls `triggerEnrichmentNow()` and cleans completed BullMQ jobs.
+- **Enrichment: BullMQ jobId dedup silently drops re-queued vibe tracks**: Added `vibeQueue.clean(0, 0, 'completed')` before `addBulk()`.
+- **Enrichment: stale failure records inflate "View Failures" count**: CLAP analyzer resolves failures on success.
+
+### Removed
+
+- **Swagger API documentation**: Removed `swagger-jsdoc`, `swagger-ui-express`, and all 16 `@openapi` annotations. 30 packages eliminated.
+- **Debug logging**: Removed 20 debug `console.log`/`console.warn` statements.
+- **Unused dependencies**: Removed `react-virtuoso`, `silence-keepalive.ts`, dead `pauseRef`.
+
+### Changed
+
+- **Audio state context cleanup**: Removed unused exports `isRepeat`, `lastServerSync`, `setLastServerSync`, `isHydrated` from context type and provider value.
+
+- **Frontend query keys standardized**: Raw `["playlist", id]` string arrays replaced with centralized `queryKeys` helpers across the playlist page.
+- **Share API `entityType` typed**: Parameter typed as `"playlist" | "track" | "album"` union instead of `string`.
+- **Playlist mutations use React Query**: Track removal and playlist deletion now use mutation hooks with automatic cache invalidation instead of direct API calls.
+- **AuthenticatedLayout**: Public path matching changed from exact match to prefix match for `/share/*` routes.
+- **Playlist import performance**: Parallelized MusicBrainz lookups via Promise.all. Batch-loaded all library tracks -- reduced ~3000 per-track DB queries to 2 batch queries.
+- **Dependencies**: Updated safe patches -- @bull-board 6.20.3, axios 1.13.6, bullmq 5.70.1, ioredis 5.10.0, fast-xml-parser 5.4.1 (stack overflow CVE fix), tailwindcss 4.2.1, framer-motion 12.34.3, tailwind-merge 3.5.0. Fixed npm audit vulnerabilities.
+
 ## [1.6.0] - 2026-03-02
 
 ### Fixed
@@ -57,48 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Overlay re-open on auto-advance**: Don't re-open overlay on auto-advance after first play.
 - **Previous track restart**: Restart current track if position > 3s on previous button press.
 - **Podcast detection**: Split podcast composite ID before URL comparison.
-
-## [1.6.1] - 2026-03-01
-
-### Added
-
-- **GHCR publishing**: Docker images now published to GitHub Container Registry alongside Docker Hub on tagged releases. Credit to @SupremeMortal (#48).
-- **#134 Lidarr batch album fetching**: Large Lidarr libraries no longer crash with V8 string overflow -- albums are fetched in paginated batches. Credit to @cachamber.
-- **#132 Preview volume sync**: Preview audio volume now syncs with the global player volume. Credit to @cachamber.
-- **Safari audio session hint**: Explicitly sets `navigator.audioSession.type = "playback"` on Safari 16.4+ to ensure the correct AVAudioSession category before first playback.
-
-### Fixed
-
-- **Artist page popular tracks**: Improved title matching with three-tier fallback (exact, normalized, aggressively stripped) so remaster/deluxe variants match correctly as owned. Unowned tracks now show artist hero image instead of gray placeholder.
-- **Card hover overlay regression**: Dark gradient overlays caused blackout effect on album art hover. Made overlay conditional on playable cards, softened opacity on grid cards.
-- **Album navigation delay**: First click to album pages felt unresponsive due to `prefetch={false}` on all card Links. Enabled Next.js prefetching for instant navigation.
-- **GHCR image name casing**: `github.repository_owner` preserves uppercase but GHCR requires all-lowercase. Compute image name at runtime with bash lowercase conversion.
-- **#128 Subsonic rate limit too low for Symfonium sync**: Large libraries (2000+ songs) hit the 300 req/min rate limit during Symfonium sync. Bumped to 1500 req/min -- self-hosted service behind auth, no brute-force risk.
-- **Mobile: lock screen always shows "playing" / steals Bluetooth/CarPlay**: Removed the silence keepalive system that looped near-silent audio to maintain the OS audio session while paused. This caused iOS/Android to treat Kima as actively playing -- stealing Bluetooth priority from other apps, interrupting podcasts, and showing permanent "playing" state on lock screen. No other web music player uses this pattern; the tradeoff (lock screen controls disappearing after ~30s pause) matches Navidrome, Jellyfin, and all other self-hosted web players.
-- **Mobile: resumeWithGesture shows "playing" when blocked by OS**: `resumeWithGesture()` set UI to "playing" before confirming the audio engine actually started. On iOS where autoplay is restricted, this left the UI in a false "playing" state with no audio. Now awaits confirmation and reverts on failure.
-- **Audiobook progress overwritten on track end**: When an audiobook track ended naturally, the `isFinished` completion flag was immediately overwritten by the pause-triggered progress save (which saved without the flag). Audiobooks that were fully listened to would show as in-progress instead of complete.
-- **Duplicate "play" event firing**: The audio engine emitted the custom `"play"` event on both the native `play` and `playing` events, causing downstream handlers (MediaSession, React state sync) to fire twice per play action. Now emits only on `playing` (when audio is actually producing sound).
-- **MediaSession metadata unnecessary re-renders**: Metadata update effect depended on `isPlaying`, causing it to re-run on every play/pause toggle despite metadata not changing. Removed the dependency.
-- **Mobile: lock screen stuck on "playing" after errors**: MediaSession playbackState listeners did not include the audio engine's `error` event, so after network errors exhausted retries, the lock screen stayed on "playing" indefinitely. Also set playbackState to `"none"` when the queue clears.
-- **Mobile: audio stops silently in background**: Network retry `play().catch(() => {})` swallowed failures in iOS background (no user gesture context), leaving the player in a broken state with no visible error. Now emits a proper error so the UI can update. Additionally, network errors (code 2) now preserve the current track/podcast/audiobook instead of clearing it, allowing foreground recovery.
-- **Mobile: foreground recovery too narrow**: Returning to the app after a background error showed an error state instead of the player. Now clears the error on foreground return so users can tap play to resume.
-- **Podcast progress bar reverts on pause**: `savePodcastProgress` saved to the API but did not update React state, so the progress sync effect read a stale position on pause. Now mirrors the audiobook pattern by updating `currentPodcast` state after save.
-- **Mobile: permanent pause after phone call/Siri**: Audio interruptions (phone calls, Siri, other apps) triggered the MediaSession pause handler which permanently set `isPlaying=false` with no recovery path. Now tracks pre-interruption state and attempts auto-resume when the user returns to the app.
-- **Enrichment: `isPaused` permanently stuck after Stop**: Clicking Stop set both `isStopping` and `isPaused` flags, but `shouldHaltCycle()` only cleared `isStopping`. The enrichment cycle ran every 5s but returned immediately with zero work until a backend restart or "Re-enrich All".
-- **Enrichment: vibe re-run doesn't restart cycle**: The "Re-run Vibe Embeddings" button queued at most 500 tracks directly to BullMQ but never unpaused or restarted the enrichment cycle. Remaining tracks beyond the 500 limit were never queued because `executeVibePhase` (the periodic sweep) was part of the dead cycle. Now calls `triggerEnrichmentNow()` and cleans completed BullMQ jobs before queueing.
-- **Enrichment: BullMQ jobId dedup silently drops re-queued vibe tracks**: Vibe re-run and retry routes used `jobId: 'vibe-${trackId}'` without cleaning completed job hashes from Redis. BullMQ silently returned old completed jobs instead of creating new ones. Added `vibeQueue.clean(0, 0, 'completed')` before `addBulk()`, matching the existing pattern in `executeVibePhase`.
-- **Enrichment: stale failure records inflate "View Failures" count**: Tracks that failed initially but succeeded on retry kept unresolved failure records. CLAP analyzer now calls `POST /vibe/success` to resolve failures on success. `cleanupOrphanedFailures()` extended to resolve failures for tracks with `analysisStatus` or `vibeAnalysisStatus` of `'completed'`.
-
-### Removed
-
-- **Swagger API documentation**: Removed `swagger-jsdoc`, `swagger-ui-express`, and all 16 `@openapi` annotations. Only covered ~10% of endpoints and pulled in deprecated transitive dependencies (`inflight`, old `glob`, `lodash.get`, `lodash.isequal`). 30 packages eliminated.
-- **Debug logging**: Removed 20 debug `console.log`/`console.warn` statements (SSE connection tracing, search store internals, queue debug infrastructure).
-- **Unused dependencies**: Removed `react-virtuoso` (never imported), `silence-keepalive.ts` (caused Bluetooth/CarPlay theft), commented-out Vibe sidebar route, dead `pauseRef` in MediaSession hook.
-
-### Changed
-
-- **Playlist import performance**: Parallelized MusicBrainz lookups via Promise.all (PQueue rate limiter still serializes HTTP calls, but event loop stays unblocked for SSE progress updates). Batch-loaded all library tracks in `buildPlaylist()` and `refreshJobMatches()` -- reduced ~3000 per-track DB queries to 2 batch queries with in-memory matching.
-- **Dependencies**: Updated safe patches -- @bull-board 6.20.3, axios 1.13.6, bullmq 5.70.1, ioredis 5.10.0, fast-xml-parser 5.4.1 (stack overflow CVE fix), tailwindcss 4.2.1, framer-motion 12.34.3, tailwind-merge 3.5.0. Fixed npm audit vulnerabilities (ajv ReDoS, minimatch ReDoS).
 
 ## [1.6.0] - 2026-02-28
 

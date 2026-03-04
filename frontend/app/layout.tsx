@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
     title: "Kima - Your Music",
-    description: "Self-hosted music streaming platform",
+    description: "Self-hosted music streaming platform. https://github.com/Chevron7Locked/kima-hub",
     manifest: "/manifest.webmanifest",
     icons: {
         apple: [
@@ -43,6 +43,13 @@ export const metadata: Metadata = {
         capable: true,
         statusBarStyle: "black-translucent",
         title: "Kima",
+    },
+    openGraph: {
+        title: "Kima",
+        description: "Self-hosted music streaming platform",
+        siteName: "Kima",
+        url: "https://github.com/Chevron7Locked/kima-hub",
+        type: "website",
     },
 };
 

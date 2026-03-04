@@ -439,14 +439,21 @@ export class EnrichmentService {
 
         if (data.bio) updateData.summary = data.bio;
         if (data.heroUrl) {
-            // Download image locally if it's an external URL
             if (!isNativePath(data.heroUrl)) {
-                const localPath = await downloadAndStoreImage(
-                    data.heroUrl,
-                    artistId,
-                    "artist"
-                );
-                updateData.heroUrl = localPath || data.heroUrl;
+                const current = await prisma.artist.findUnique({
+                    where: { id: artistId },
+                    select: { heroUrl: true },
+                });
+                if (current?.heroUrl && isNativePath(current.heroUrl)) {
+                    // Keep existing local image, skip external URL
+                } else {
+                    const localPath = await downloadAndStoreImage(
+                        data.heroUrl,
+                        artistId,
+                        "artist"
+                    );
+                    updateData.heroUrl = localPath || data.heroUrl;
+                }
             } else {
                 updateData.heroUrl = data.heroUrl;
             }

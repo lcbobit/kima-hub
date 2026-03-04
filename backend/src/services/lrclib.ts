@@ -2,7 +2,7 @@ import axios from "axios";
 import { logger } from "../utils/logger";
 
 const LRCLIB_API = "https://lrclib.net/api";
-const USER_AGENT = "Kima/1.6.0 (https://github.com/Chevron7Locked/kima-hub)";
+const USER_AGENT = "Kima/1.6.1 (https://github.com/Chevron7Locked/kima-hub)";
 
 interface LrclibResponse {
     id: number;

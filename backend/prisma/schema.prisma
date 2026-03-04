@@ -720,6 +720,7 @@ model User {
   unavailableAlbums      UnavailableAlbum[]
   discoverConfig         UserDiscoverConfig?
   settings               UserSettings?
+  shareLinks             ShareLink[]
 }
 
 model UserDiscoverConfig {
@@ -814,6 +815,22 @@ model TrackLyrics {
   track         Track    @relation(fields: [track_id], references: [id], onDelete: Cascade)
 
   @@map("track_lyrics")
+}
+
+model ShareLink {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  entityType String
+  entityId   String
+  createdBy  String
+  expiresAt  DateTime?
+  maxPlays   Int?
+  playCount  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@map("share_links")
 }
 
 enum AlbumLocation {

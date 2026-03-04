@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Play, Pause, Check, ArrowUpDown, CheckCircle, ChevronDown, ChevronUp } from "lucide-react";
 import DOMPurify from "dompurify";
 import { cn } from "@/utils/cn";
@@ -37,6 +37,7 @@ function EpisodeRow({
     onPlay: (episode: Episode) => void;
     onMarkComplete?: (episodeId: string, duration: number) => void;
 }) {
+    const lastTapRef = useRef<{ time: number; index: number }>({ time: 0, index: -1 });
     const [expanded, setExpanded] = useState(false);
     const isInProgress =
         episode.progress &&
@@ -66,12 +67,26 @@ function EpisodeRow({
             )}
 
             <div
+                data-track-index={index}
                 onDoubleClick={() => {
                     if (!isCurrentEpisode) {
                         onPlay(episode);
                     }
                 }}
-                className="flex items-center gap-4 px-3 py-3 cursor-pointer"
+                onTouchEnd={(e) => {
+                    const idx = Number(e.currentTarget.dataset.trackIndex);
+                    if (isNaN(idx)) return;
+                    const now = Date.now();
+                    if (now - lastTapRef.current.time < 300 && lastTapRef.current.index === idx) {
+                        if (!isCurrentEpisode) {
+                            onPlay(episode);
+                        }
+                        lastTapRef.current = { time: 0, index: -1 };
+                    } else {
+                        lastTapRef.current = { time: now, index: idx };
+                    }
+                }}
+                className="flex items-center gap-4 px-3 py-3 cursor-pointer touch-manipulation"
             >
                 {/* Number / Play/Pause */}
                 <div className="w-8 flex items-center justify-center shrink-0">

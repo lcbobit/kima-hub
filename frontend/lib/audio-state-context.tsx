@@ -109,7 +109,6 @@ interface AudioStateContextType {
     currentIndex: number;
     isShuffle: boolean;
     repeatMode: "off" | "one" | "all";
-    isRepeat: boolean;
     shuffleIndices: number[];
     podcastEpisodeQueue: Episode[] | null;
 
@@ -125,8 +124,6 @@ interface AudioStateContextType {
     vibeQueueIds: string[];
 
     // Internal state
-    isHydrated: boolean;
-    lastServerSync: Date | null;
     repeatOneCount: number;
 
     // State setters (for controls context)
@@ -146,7 +143,6 @@ interface AudioStateContextType {
     setPreviousPlayerMode: (mode: SetStateAction<PlayerMode>) => void;
     setVolume: (volume: SetStateAction<number>) => void;
     setIsMuted: (muted: SetStateAction<boolean>) => void;
-    setLastServerSync: (date: SetStateAction<Date | null>) => void;
     setRepeatOneCount: (count: SetStateAction<number>) => void;
     setVibeMode: (mode: SetStateAction<boolean>) => void;
     setVibeSourceFeatures: (
@@ -465,9 +461,9 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
 
         const saveToServer = async () => {
             try {
-                // Limit queue to first 100 items to reduce payload size
-                // Backend also limits to 100, so this matches server storage
-                const limitedQueue = queue?.slice(0, 100);
+                // Limit queue to first 2000 items to reduce payload size
+                // Backend also limits to 2000, so this matches server storage
+                const limitedQueue = queue?.slice(0, 2000);
                 const adjustedIndex = Math.min(
                     currentIndex,
                     (limitedQueue?.length || 1) - 1
@@ -665,7 +661,6 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             currentIndex,
             isShuffle,
             repeatMode,
-            isRepeat: repeatMode !== "off",
             shuffleIndices,
             podcastEpisodeQueue,
             playerMode,
@@ -675,8 +670,6 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             vibeMode,
             vibeSourceFeatures,
             vibeQueueIds,
-            isHydrated,
-            lastServerSync,
             repeatOneCount,
             setCurrentTrack,
             setCurrentAudiobook,
@@ -692,7 +685,6 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             setPreviousPlayerMode,
             setVolume,
             setIsMuted,
-            setLastServerSync,
             setRepeatOneCount,
             setVibeMode,
             setVibeSourceFeatures,
@@ -716,8 +708,6 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             vibeMode,
             vibeSourceFeatures,
             vibeQueueIds,
-            isHydrated,
-            lastServerSync,
             repeatOneCount,
         ]
     );

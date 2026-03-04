@@ -1095,6 +1095,15 @@ async function executeVibePhase(): Promise<number> {
         return 0;
     }
 
+    // Defer vibe phase until audio analysis is idle -- both ML models
+    // competing for CPU/GPU causes thrashing and UI flickering
+    const audioInFlight = await prisma.track.count({
+        where: { analysisStatus: { in: ["processing", "pending"] } },
+    });
+    if (audioInFlight > 0) {
+        return 0;
+    }
+
     // Find tracks with completed audio analysis but no embedding row.
     // This catches:
     //   - Tracks orphaned by migration wiping track_embeddings
@@ -1119,6 +1128,10 @@ async function executeVibePhase(): Promise<number> {
         return 0;
     }
 
+    // Ensure vibe queue is resumed -- the audioCompletionSubscriber may have
+    // paused it and the resume timer may have deferred (found audio still active)
+    await vibeQueue.resume().catch(() => {});
+
     // Clean completed jobs to prevent jobId dedup from silently losing re-queued tracks
     await vibeQueue.clean(0, 0, 'completed');
 
@@ -1141,8 +1154,10 @@ async function executeVibePhase(): Promise<number> {
                 { jobId: `vibe-${track.id}` },
             );
             queued++;
-        } catch (err) {
-            // jobId dedup: if already queued, BullMQ throws — that's fine
+        } catch (err: any) {
+            if (!err?.message?.includes("Job already exists")) {
+                logger.warn(`[Enrichment] Failed to queue vibe job for ${track.id}: ${err?.message}`);
+            }
         }
     }
 
