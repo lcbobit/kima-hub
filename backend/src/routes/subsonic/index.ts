@@ -64,6 +64,28 @@ subsonicRouter.all("/getBookmarks.view", (req: Request, res: Response) => {
     subsonicOk(req, res, { bookmarks: {} });
 });
 
+subsonicRouter.all("/getNowPlaying.view", (req: Request, res: Response) => {
+    subsonicOk(req, res, { nowPlaying: {} });
+});
+
+subsonicRouter.all("/getScanStatus.view", (req: Request, res: Response) => {
+    subsonicOk(req, res, { scanStatus: { "@_scanning": false, "@_count": 0 } });
+});
+
+subsonicRouter.all("/startScan.view", async (req: Request, res: Response) => {
+    const { scanQueue } = await import("../../workers/queues");
+    await scanQueue.add("scan", { userId: req.user!.id, source: "subsonic" });
+    subsonicOk(req, res, { scanStatus: { "@_scanning": true, "@_count": 0 } });
+});
+
+subsonicRouter.all("/setRating.view", (req: Request, res: Response) => {
+    subsonicOk(req, res);
+});
+
+subsonicRouter.all(["/getAlbumInfo.view", "/getAlbumInfo2.view"], (req: Request, res: Response) => {
+    subsonicOk(req, res, { albumInfo: {} });
+});
+
 subsonicRouter.use(libraryRouter);
 subsonicRouter.use(playbackRouter);
 subsonicRouter.use(searchRouter);
