@@ -270,6 +270,8 @@ type AlbumWithArtist = {
         genres?: unknown;
         userGenres?: unknown;
     };
+    _count?: { tracks: number };
+    tracks?: { duration: number | null }[];
 };
 
 // getAlbumList2 is ID3-tagged; getAlbumList is the legacy folder-based alias
@@ -278,6 +280,12 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
     const size = Math.min(parseInt((req.query.size as string) || "10", 10), 500);
     const offset = parseInt((req.query.offset as string) || "0", 10);
     const userId = req.user!.id;
+
+    const albumInclude = {
+        artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } },
+        _count: { select: { tracks: true } },
+        tracks: { where: { corrupt: false }, select: { duration: true } },
+    } as const;
 
     let albums: AlbumWithArtist[] = [];
 
@@ -288,7 +296,7 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { lastSynced: "desc" },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
             break;
 
@@ -298,7 +306,7 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { title: "asc" },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
             break;
 
@@ -308,7 +316,7 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { artist: { name: "asc" } },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
             break;
 
@@ -330,7 +338,7 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { year: fromYear <= toYear ? "asc" : "desc" },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
             break;
         }
@@ -344,7 +352,9 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
             const rows = await prisma.$queryRaw<AlbumWithArtist[]>`
                 SELECT a.id, a.title, a."displayTitle", a.year, a."coverUrl", a."userCoverUrl", a."artistId",
                        json_build_object('id', ar.id, 'name', ar.name, 'displayName', ar."displayName",
-                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist
+                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist,
+                       (SELECT COUNT(*)::int FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "songCount",
+                       (SELECT COALESCE(SUM(t2.duration), 0) FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "totalDuration"
                 FROM "Album" a
                 JOIN "Artist" ar ON a."artistId" = ar.id
                 WHERE a."location" = 'LIBRARY'
@@ -374,7 +384,7 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { title: "asc" },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
             break;
 
@@ -382,7 +392,9 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
             const rows = await prisma.$queryRaw<AlbumWithArtist[]>`
                 SELECT a.id, a.title, a."displayTitle", a.year, a."coverUrl", a."userCoverUrl", a."artistId",
                        json_build_object('id', ar.id, 'name', ar.name, 'displayName', ar."displayName",
-                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist
+                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist,
+                       (SELECT COUNT(*)::int FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "songCount",
+                       (SELECT COALESCE(SUM(t2.duration), 0) FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "totalDuration"
                 FROM "Album" a
                 JOIN "Artist" ar ON a."artistId" = ar.id
                 WHERE a."location" = 'LIBRARY'
@@ -398,7 +410,9 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
             const rows = await prisma.$queryRaw<AlbumWithArtist[]>`
                 SELECT a.id, a.title, a."displayTitle", a.year, a."coverUrl", a."userCoverUrl", a."artistId",
                        json_build_object('id', ar.id, 'name', ar.name, 'displayName', ar."displayName",
-                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist
+                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist,
+                       (SELECT COUNT(*)::int FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "songCount",
+                       (SELECT COALESCE(SUM(t2.duration), 0) FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "totalDuration"
                 FROM "Album" a
                 JOIN "Artist" ar ON a."artistId" = ar.id
                 JOIN "Track" t ON t."albumId" = a.id
@@ -418,7 +432,9 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
             const rows = await prisma.$queryRaw<AlbumWithArtist[]>`
                 SELECT a.id, a.title, a."displayTitle", a.year, a."coverUrl", a."userCoverUrl", a."artistId",
                        json_build_object('id', ar.id, 'name', ar.name, 'displayName', ar."displayName",
-                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist
+                           'genres', ar.genres, 'userGenres', ar."userGenres") as artist,
+                       (SELECT COUNT(*)::int FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "songCount",
+                       (SELECT COALESCE(SUM(t2.duration), 0) FROM "Track" t2 WHERE t2."albumId" = a.id AND t2.corrupt = false) as "totalDuration"
                 FROM "Album" a
                 JOIN "Artist" ar ON a."artistId" = ar.id
                 JOIN "Track" t ON t."albumId" = a.id
@@ -440,14 +456,20 @@ libraryRouter.all(["/getAlbumList2.view", "/getAlbumList.view"], wrap(async (req
                 orderBy: { lastSynced: "desc" },
                 take: size,
                 skip: offset,
-                include: { artist: { select: { id: true, name: true, displayName: true, genres: true, userGenres: true } } },
+                include: albumInclude,
             });
     }
 
     const albumList = albums.map((a) => {
         const artistName = a.artist.displayName || a.artist.name;
         const genre = firstArtistGenre(a.artist.genres, a.artist.userGenres);
-        return mapAlbum({ ...a, artistId: a.artist.id, genre }, artistName);
+        const songCount = a._count?.tracks
+            ?? (a as unknown as { songCount?: number }).songCount
+            ?? 0;
+        const duration = a.tracks
+            ? a.tracks.reduce((sum, t) => sum + (t.duration ?? 0), 0)
+            : Number((a as unknown as { totalDuration?: number | bigint }).totalDuration ?? 0);
+        return mapAlbum({ ...a, artistId: a.artist.id, songCount, duration, genre }, artistName);
     });
 
     const key = req.path.includes("getAlbumList2") ? "albumList2" : "albumList";
