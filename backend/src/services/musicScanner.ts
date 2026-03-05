@@ -579,7 +579,8 @@ export class MusicScannerService {
         const trackNo = metadata.common.track.no || 0;
         const duration = Math.floor(metadata.format.duration || 0);
         const mime = metadata.format.codec || "audio/mpeg";
-        const isrc = metadata.common.isrc?.[0] || null;
+        const rawIsrc = metadata.common.isrc?.[0] || null;
+        const isrc = rawIsrc?.split(/[;,]/)[0]?.trim() || null;
 
         // Artist and album info
         // IMPORTANT: Prefer albumartist over artist to keep albums grouped under the primary artist
