@@ -168,7 +168,7 @@ class AudioAnalysisCleanupService {
                     },
                 });
 
-                const failure = await enrichmentFailureService.recordFailure({
+                await enrichmentFailureService.recordFailure({
                     entityType: "audio",
                     entityId: track.id,
                     entityName: trackName,
@@ -179,8 +179,6 @@ class AudioAnalysisCleanupService {
                         retryCount: newRetryCount,
                     },
                 });
-
-                await enrichmentFailureService.skipFailures([failure.id]);
 
                 logger.warn(
                     `[AudioAnalysisCleanup] Permanently failed: ${trackName}`

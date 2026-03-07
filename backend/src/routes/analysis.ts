@@ -8,6 +8,7 @@ import { enrichmentFailureService } from "../services/enrichmentFailureService";
 import { eventBus } from "../services/eventBus";
 import { vibeQueue } from "../workers/enrichmentQueues";
 import { triggerEnrichmentNow } from "../workers/unifiedEnrichment";
+import { audioAnalysisCleanupService } from "../services/audioAnalysisCleanup";
 import os from "os";
 
 const router = Router();
@@ -130,11 +131,8 @@ router.post("/start", requireAuth, requireAdmin, async (req, res) => {
  */
 router.post("/retry-failed", requireAuth, requireAdmin, async (req, res) => {
     try {
-        // Reset failed and permanently_failed tracks to pending
-        const result = await prisma.track.updateMany({
-            where: {
-                analysisStatus: { in: ["failed", "permanently_failed"] },
-            },
+        const failedResult = await prisma.track.updateMany({
+            where: { analysisStatus: "failed" },
             data: {
                 analysisStatus: "pending",
                 analysisError: null,
@@ -142,9 +140,35 @@ router.post("/retry-failed", requireAuth, requireAdmin, async (req, res) => {
             },
         });
 
+        const permFailedResult = await prisma.track.updateMany({
+            where: { analysisStatus: "permanently_failed" },
+            data: {
+                analysisStatus: "pending",
+                analysisError: null,
+                analysisRetryCount: 0,
+            },
+        });
+
+        // Mark related enrichment failures as resolved
+        await prisma.enrichmentFailure.updateMany({
+            where: {
+                entityType: "audio",
+                resolved: false,
+            },
+            data: {
+                resolved: true,
+                resolvedAt: new Date(),
+            },
+        });
+
+        audioAnalysisCleanupService.resetCircuitBreaker();
+
+        const totalReset = failedResult.count + permFailedResult.count;
         res.json({
-            message: `Reset ${result.count} failed tracks to pending`,
-            reset: result.count,
+            message: `Reset ${totalReset} failed tracks to pending`,
+            reset: totalReset,
+            failed: failedResult.count,
+            permanentlyFailed: permFailedResult.count,
         });
     } catch (error: any) {
         logger.error("Retry failed error:", error);

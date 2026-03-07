@@ -512,9 +512,6 @@ export const AudioElement = memo(function AudioElement() {
 
     useEffect(() => {
         if (isPlaying) {
-            // Acquire Web Lock to prevent OS from suspending the page
-            audioEngine.acquireWebLock();
-
             if (!audioEngine.hasAudio() && !audioEngine.getState().currentSrc) {
                 // No audio loaded - force reload by resetting track ref
                 lastTrackIdRef.current = null;
@@ -528,8 +525,6 @@ export const AudioElement = memo(function AudioElement() {
             });
         } else {
             audioEngine.pause();
-            // Release Web Lock -- page can be suspended now
-            audioEngine.releaseWebLock();
         }
     }, [isPlaying, setIsPlaying]);
 

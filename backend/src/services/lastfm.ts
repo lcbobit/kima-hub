@@ -40,7 +40,7 @@ class LastFmService {
         if (!settings) {
             return {
                 enabled: true,
-                apiKey: process.env.LASTFM_API_KEY,
+                apiKey: config.lastfm.apiKey,
                 apiSecret: process.env.LASTFM_API_SECRET,
                 userKey: null,
             };
@@ -52,7 +52,7 @@ class LastFmService {
 
         return {
             enabled: settings.lastfmEnabled ?? true,
-            apiKey: settings.lastfmApiKey || process.env.LASTFM_API_KEY,
+            apiKey: settings.lastfmApiKey || config.lastfm.apiKey,
             apiSecret: settings.lastfmApiSecret || process.env.LASTFM_API_SECRET,
             userKey: settings.lastfmUserKey,
         };

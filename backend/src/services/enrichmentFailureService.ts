@@ -82,6 +82,8 @@ class EnrichmentFailureService {
                 lastFailedAt: new Date(),
                 resolved: false,
                 resolvedAt: null,
+                skipped: false,
+                skippedAt: null,
                 metadata: metadata
                     ? serializedMeta
                     : undefined,

@@ -1404,8 +1404,10 @@ class ApiClient {
                 total: number;
                 completed: number;
                 pending: number;
+                queued: number;
                 processing: number;
                 failed: number;
+                permanentlyFailed: number;
                 progress: number;
                 isBackground: boolean;
             };

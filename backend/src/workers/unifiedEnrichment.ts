@@ -260,8 +260,9 @@ export async function startUnifiedEnrichmentWorker() {
     logger.debug("");
 
      // Crash recovery: reset orphaned entities stuck mid-processing from a previous crash
+     // Include "queued" -- Redis queue may have been lost during restart
      const orphanedAudio = await prisma.track.updateMany({
-         where: { analysisStatus: "processing" },
+         where: { analysisStatus: { in: ["processing", "queued"] } },
          data: { analysisStatus: "pending", analysisStartedAt: null },
      });
      const orphanedVibe = await prisma.track.updateMany({
@@ -873,8 +874,17 @@ export async function enrichSingleTrack(trackId: string): Promise<void> {
  * Step 3: Queue pending tracks for audio analysis (Essentia)
  */
 async function queueAudioAnalysis(): Promise<number> {
-    // Find tracks that need audio analysis
-    // All tracks should have filePath, so no null check needed
+    const redis = getRedis();
+    const queueLength = await redis.llen("audio:analysis:queue");
+    const MAX_QUEUE_DEPTH = 50;
+
+    if (queueLength >= MAX_QUEUE_DEPTH) {
+        logger.debug(`[Audio Analysis] Queue depth ${queueLength} >= ${MAX_QUEUE_DEPTH}, skipping`);
+        return 0;
+    }
+
+    const batchSize = Math.min(10, MAX_QUEUE_DEPTH - queueLength);
+
     const tracks = await prisma.track.findMany({
         where: {
             analysisStatus: "pending",
@@ -886,7 +896,7 @@ async function queueAudioAnalysis(): Promise<number> {
             title: true,
             duration: true,
         },
-        take: 10, // Match analyzer batch size to avoid stale "processing" buildup
+        take: batchSize,
         orderBy: { fileModified: "desc" },
     });
 
@@ -896,12 +906,10 @@ async function queueAudioAnalysis(): Promise<number> {
         `[Audio Analysis] Queueing ${tracks.length} tracks for Essentia...`,
     );
 
-    const redis = getRedis();
     let queued = 0;
 
     for (const track of tracks) {
         try {
-            // Queue for the Python audio analyzer
             await redis.rpush(
                 "audio:analysis:queue",
                 JSON.stringify({
@@ -911,12 +919,11 @@ async function queueAudioAnalysis(): Promise<number> {
                 }),
             );
 
-            // Mark as queued (processing) with timestamp for timeout detection
+            // Mark as queued — Python sets "processing" + analysisStartedAt when it dequeues
             await prisma.track.update({
                 where: { id: track.id },
                 data: {
-                    analysisStatus: "processing",
-                    analysisStartedAt: new Date(),
+                    analysisStatus: "queued",
                 },
             });
 
@@ -1090,10 +1097,10 @@ async function executeAudioPhase(): Promise<number> {
         );
     }
 
-    // Drain purgatory: tracks stuck as pending but retryCount >= MAX_RETRIES will never complete
+    // Drain purgatory: tracks stuck as pending/queued but retryCount >= MAX_RETRIES will never complete
     const purgatoryTracks = await prisma.track.findMany({
         where: {
-            analysisStatus: "pending",
+            analysisStatus: { in: ["pending", "queued"] },
             analysisRetryCount: { gte: 3 },
         },
         select: { id: true, title: true, filePath: true, analysisRetryCount: true },
@@ -1107,7 +1114,7 @@ async function executeAudioPhase(): Promise<number> {
             },
         });
         for (const track of purgatoryTracks) {
-            const failure = await enrichmentFailureService.recordFailure({
+            await enrichmentFailureService.recordFailure({
                 entityType: "audio",
                 entityId: track.id,
                 entityName: track.title,
@@ -1115,7 +1122,6 @@ async function executeAudioPhase(): Promise<number> {
                 errorCode: "MAX_RETRIES_EXCEEDED",
                 metadata: { filePath: track.filePath, retryCount: track.analysisRetryCount },
             });
-            await enrichmentFailureService.skipFailures([failure.id]);
         }
         logger.warn(`[Enrichment] Drained ${purgatoryTracks.length} purgatory tracks to permanently_failed`);
     }
@@ -1301,6 +1307,9 @@ export async function getEnrichmentProgress() {
     const audioPending = await prisma.track.count({
         where: { analysisStatus: "pending" },
     });
+    const audioQueued = await prisma.track.count({
+        where: { analysisStatus: "queued" },
+    });
     const audioProcessing = await prisma.track.count({
         where: { analysisStatus: "processing" },
     });
@@ -1370,6 +1379,7 @@ export async function getEnrichmentProgress() {
             total: trackTotal,
             completed: audioCompleted,
             pending: audioPending,
+            queued: audioQueued,
             processing: audioProcessing,
             failed: audioFailed,
             permanentlyFailed: permanentlyFailedCount,
@@ -1399,6 +1409,7 @@ export async function getEnrichmentProgress() {
         isFullyComplete:
             coreComplete &&
             audioPending === 0 &&
+            audioQueued === 0 &&
             audioProcessing === 0 &&
             clapProcessing === 0 &&
             clapQueueLength === 0 &&

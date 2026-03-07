@@ -139,43 +139,6 @@ export const enrichmentApi = {
     },
 
     /**
-     * Retry specific failures
-     */
-    retryFailures: async (
-        ids: string[]
-    ): Promise<{ message: string; queued: number }> => {
-        return api.post("/enrichment/retry", { ids });
-    },
-
-    /**
-     * Skip failures permanently
-     */
-    skipFailures: async (
-        ids: string[]
-    ): Promise<{ message: string; count: number }> => {
-        return api.post("/enrichment/skip", { ids });
-    },
-
-    /**
-     * Delete a failure record
-     */
-    deleteFailure: async (
-        id: string
-    ): Promise<{ message: string; count: number }> => {
-        return api.delete(`/enrichment/failures/${id}`);
-    },
-
-    /**
-     * Clear all failure records (optionally filtered by type)
-     */
-    clearAllFailures: async (
-        entityType?: "artist" | "track" | "audio" | "vibe"
-    ): Promise<{ message: string; count: number }> => {
-        const query = entityType ? `?entityType=${entityType}` : "";
-        return api.delete(`/enrichment/failures${query}`);
-    },
-
-    /**
      * Get enrichment concurrency configuration
      */
     getConcurrency: async (): Promise<ConcurrencyConfig> => {

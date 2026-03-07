@@ -93,7 +93,7 @@ const nextConfig: NextConfig = {
                             `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
                             "style-src 'self' 'unsafe-inline'",
                             "img-src 'self' data: blob: https://cdn-images.dzcdn.net https://e-cdns-images.dzcdn.net https://lastfm.freetls.fastly.net https://lastfm-img2.akamaized.net https://assets.fanart.tv https://i.scdn.co https://mosaic.scdn.co https://image-cdn-ak.spotifycdn.com https://image-cdn-fa.spotifycdn.com https://assets.pippa.io https://is1-ssl.mzstatic.com",
-                            "media-src 'self' blob:",
+                            "media-src 'self' blob: data:",
                             "connect-src 'self' ws: wss:",
                             "font-src 'self'",
                             "object-src 'none'",

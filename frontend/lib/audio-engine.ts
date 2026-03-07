@@ -36,9 +36,6 @@ class AudioEngine {
     private networkRetryTimeout: ReturnType<typeof setTimeout> | null = null;
     private retrySeekTime: number | null = null;
 
-    // Web Lock for background playback (prevents page suspension)
-    private webLockController: AbortController | null = null;
-
     // Silent bridge for track transitions (keeps audio session alive on iOS)
     private silentBridgeAudio: HTMLAudioElement | null = null;
     private silentBridgeTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -483,7 +480,6 @@ class AudioEngine {
         this.cancelPreload();
         this.stopTimeUpdates();
         this.cancelNetworkRetry();
-        this.releaseWebLock();
         this.stopSilentBridge();
 
         if (this.audio) {
@@ -502,39 +498,6 @@ class AudioEngine {
         }
         this.networkRetryCount = 0;
         this.retrySeekTime = null;
-    }
-
-    /**
-     * Acquire a Web Lock to signal the browser that background work is active.
-     * Prevents page suspension on Chrome/Android. Safari 15.4+ supports this.
-     * The lock is held until releaseWebLock() is called (on pause/stop).
-     */
-    acquireWebLock(): void {
-        if (this.webLockController) return; // Already held
-        if (typeof navigator === "undefined" || !("locks" in navigator)) return;
-
-        this.webLockController = new AbortController();
-        navigator.locks.request(
-            "kima-audio-playback",
-            { signal: this.webLockController.signal },
-            () => new Promise<void>((resolve) => {
-                // This promise resolves when the AbortController is aborted,
-                // which releases the lock. The lock is held indefinitely until then.
-                this.webLockController?.signal.addEventListener("abort", () => resolve(), { once: true });
-            }),
-        ).catch(() => {
-            // Lock request was aborted (normal cleanup) or not supported
-        });
-    }
-
-    /**
-     * Release the Web Lock, allowing the browser to suspend the page if idle.
-     */
-    releaseWebLock(): void {
-        if (this.webLockController) {
-            this.webLockController.abort();
-            this.webLockController = null;
-        }
     }
 
     /**
@@ -588,7 +551,6 @@ class AudioEngine {
      */
     destroy(): void {
         this.cleanup();
-        this.releaseWebLock();
         this.stopSilentBridge();
         this.detachNativeListeners();
         this.eventListeners.clear();
