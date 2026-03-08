@@ -19,6 +19,7 @@ const navigation = [
     { name: "Collection", href: "/collection" },
     { name: "Radio", href: "/radio" },
     { name: "Discovery", href: "/discover" },
+    { name: "Vibe", href: "/vibe" },
     { name: "Audiobooks", href: "/audiobooks" },
     { name: "Podcasts", href: "/podcasts" },
     { name: "Browse", href: "/browse/playlists" },
