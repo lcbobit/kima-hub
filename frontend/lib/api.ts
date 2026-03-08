@@ -1691,6 +1691,56 @@ class ApiClient {
         }>("/vibe/status");
     }
 
+    async getVibeMap() {
+        return this.request<{
+            tracks: Array<{
+                id: string;
+                x: number;
+                y: number;
+                title: string;
+                artist: string;
+                artistId: string;
+                albumId: string;
+                coverUrl: string | null;
+                dominantMood: string;
+                moodScore: number;
+                energy: number | null;
+                valence: number | null;
+            }>;
+            trackCount: number;
+            computedAt: string;
+        }>("/vibe/map");
+    }
+
+    async getVibePath(startTrackId: string, endTrackId: string, options?: { length?: number; mode?: "smooth" | "discovery" }) {
+        return this.request<{
+            startTrack: { id: string; title: string; duration: number; albumId: string; albumTitle: string; albumCoverUrl: string | null; artistId: string; artistName: string };
+            endTrack: { id: string; title: string; duration: number; albumId: string; albumTitle: string; albumCoverUrl: string | null; artistId: string; artistName: string };
+            path: Array<{ id: string; title: string; duration: number; albumId: string; albumTitle: string; albumCoverUrl: string | null; artistId: string; artistName: string }>;
+            metadata: { totalTracks: number; embeddingDistance: number; averageStepSize: number; mode: string };
+        }>("/vibe/path", {
+            method: "POST",
+            body: JSON.stringify({ startTrackId, endTrackId, ...options }),
+        });
+    }
+
+    async getVibeAlchemy(add: string[], subtract: string[], limit = 20) {
+        return this.request<{
+            tracks: Array<{
+                id: string;
+                title: string;
+                duration: number;
+                distance: number;
+                similarity: number;
+                album: { id: string; title: string; coverUrl: string | null };
+                artist: { id: string; name: string };
+            }>;
+        }>("/vibe/alchemy", {
+            method: "POST",
+            body: JSON.stringify({ add, subtract, limit }),
+        });
+    }
+
     async getTrackAnalysis(trackId: string) {
         return this.request<{
             id: string;
