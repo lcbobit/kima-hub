@@ -197,7 +197,9 @@ export function blendFeatureProfiles(terms: VocabTerm[]): FeatureProfile {
     if (terms.length === 0) return {};
 
     const features = ["energy", "valence", "danceability", "acousticness",
-                      "instrumentalness", "arousal"] as const;
+                      "instrumentalness", "arousal", "moodHappy", "moodSad",
+                      "moodRelaxed", "moodAggressive", "moodParty",
+                      "moodAcoustic", "moodElectronic"] as const;
 
     const result: FeatureProfile = {};
 
@@ -228,6 +230,13 @@ export function calculateFeatureMatch(
         acousticness: 0.5,
         instrumentalness: 0.5,
         arousal: 0.5,
+        moodHappy: 0.5,
+        moodSad: 0.5,
+        moodRelaxed: 0.5,
+        moodAggressive: 0.5,
+        moodParty: 0.5,
+        moodAcoustic: 0.5,
+        moodElectronic: 0.5,
     };
 
     let score = 0;
@@ -257,6 +266,13 @@ export function rerankWithFeatures<T extends {
     acousticness?: number | null;
     instrumentalness?: number | null;
     arousal?: number | null;
+    moodHappy?: number | null;
+    moodSad?: number | null;
+    moodRelaxed?: number | null;
+    moodAggressive?: number | null;
+    moodParty?: number | null;
+    moodAcoustic?: number | null;
+    moodElectronic?: number | null;
 }>(
     candidates: T[],
     matchedTerms: VocabTerm[],
@@ -286,6 +302,13 @@ export function rerankWithFeatures<T extends {
             acousticness: track.acousticness ?? null,
             instrumentalness: track.instrumentalness ?? null,
             arousal: track.arousal ?? null,
+            moodHappy: track.moodHappy ?? null,
+            moodSad: track.moodSad ?? null,
+            moodRelaxed: track.moodRelaxed ?? null,
+            moodAggressive: track.moodAggressive ?? null,
+            moodParty: track.moodParty ?? null,
+            moodAcoustic: track.moodAcoustic ?? null,
+            moodElectronic: track.moodElectronic ?? null,
         };
 
         const featureScore = Object.keys(targetProfile).length > 0
