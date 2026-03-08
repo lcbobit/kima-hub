@@ -5,6 +5,7 @@ import { prisma } from "../utils/db";
 import { redisClient } from "../utils/redis";
 import { requireAuth } from "../middleware/auth";
 import { findSimilarTracks } from "../services/hybridSimilarity";
+import { computeMapProjection } from "../services/umapProjection";
 import {
     getVocabulary,
     expandQueryWithVocabulary,
@@ -44,6 +45,21 @@ interface TextSearchResult {
     moodAcoustic: number | null;
     moodElectronic: number | null;
 }
+
+/**
+ * GET /api/vibe/map
+ * Returns UMAP 2D projections for all tracks with embeddings.
+ * Cached in Redis, invalidated when embedding count changes.
+ */
+router.get("/map", requireAuth, async (req, res) => {
+    try {
+        const mapData = await computeMapProjection();
+        res.json(mapData);
+    } catch (error: any) {
+        logger.error("Vibe map error:", error);
+        res.status(500).json({ error: "Failed to compute map projection" });
+    }
+});
 
 /**
  * GET /api/vibe/similar/:trackId
