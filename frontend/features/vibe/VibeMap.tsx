@@ -21,7 +21,6 @@ interface VibeMapProps {
     mode: string;
     trackMap: Map<string, MapTrack>;
     onTrackClick: (trackId: string) => void;
-    onTrackHover: (trackId: string | null) => void;
     onBackgroundClick: () => void;
 }
 
@@ -46,23 +45,12 @@ export function VibeMap({
     mode,
     trackMap,
     onTrackClick,
-    onTrackHover,
     onBackgroundClick,
 }: VibeMapProps) {
     const [viewState, setViewState] = useState(INITIAL_VIEW_STATE);
-    const [, setHoveredTrackId] = useState<string | null>(null);
 
     const hasHighlights = highlightedIds.size > 0;
     const zoom = viewState.zoom;
-
-    const handleHover = useCallback(
-        (info: PickingInfo) => {
-            const trackId = (info?.object as MapTrack | undefined)?.id ?? null;
-            setHoveredTrackId(trackId);
-            onTrackHover(trackId);
-        },
-        [onTrackHover],
-    );
 
     const handleClick = useCallback(
         (info: PickingInfo) => {
@@ -213,7 +201,6 @@ export function VibeMap({
                 viewState={viewState}
                 onViewStateChange={({ viewState: vs }) => setViewState(vs as typeof viewState)}
                 layers={layers}
-                onHover={handleHover}
                 onClick={handleClick}
                 getTooltip={getTooltip}
                 controller={true}

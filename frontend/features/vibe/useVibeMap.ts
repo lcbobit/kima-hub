@@ -8,7 +8,6 @@ export function useVibeMap() {
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
     const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
     const [pathResult, setPathResult] = useState<PathResult | null>(null);
-    const [searchQuery, setSearchQuery] = useState("");
     const [pathStartId, setPathStartId] = useState<string | null>(null);
 
     const { data: mapData, isLoading, error } = useQuery({
@@ -54,7 +53,6 @@ export function useVibeMap() {
     }, []);
 
     const searchVibe = useCallback(async (query: string) => {
-        setSearchQuery(query);
         setMode("search");
         try {
             const result = await api.vibeSearch(query, 50);
@@ -74,11 +72,12 @@ export function useVibeMap() {
         setHighlightedIds(new Set([fromTrackId]));
     }, []);
 
-    const completePathPicking = useCallback(async (endTrackId: string) => {
-        if (!pathStartId) return null;
+    const completePathPicking = useCallback(async (endTrackId: string, overrideStartId?: string) => {
+        const startId = overrideStartId || pathStartId;
+        if (!startId) return null;
         setMode("path-result");
         try {
-            const result = await api.getVibePath(pathStartId, endTrackId);
+            const result = await api.getVibePath(startId, endTrackId);
             setPathResult(result);
             const ids = new Set<string>();
             ids.add(result.startTrack.id);
@@ -99,7 +98,6 @@ export function useVibeMap() {
         setSelectedTrackId(null);
         setHighlightedIds(new Set());
         setPathResult(null);
-        setSearchQuery("");
         setPathStartId(null);
     }, []);
 
@@ -112,7 +110,6 @@ export function useVibeMap() {
         selectedTrackId,
         highlightedIds,
         pathResult,
-        searchQuery,
         pathStartId,
         selectTrack,
         showSimilar,

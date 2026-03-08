@@ -9,6 +9,14 @@ import { VibeSongPath } from "@/features/vibe/VibeSongPath";
 import { VibeAlchemy } from "@/features/vibe/VibeAlchemy";
 import { Loader2 } from "lucide-react";
 
+interface TrackResult {
+    id: string;
+    title: string;
+    similarity?: number;
+    album: { id: string; title: string; coverUrl: string | null };
+    artist: { id: string; name: string };
+}
+
 export default function VibePage() {
     const {
         mapData,
@@ -29,8 +37,8 @@ export default function VibePage() {
         setHighlightedIds,
     } = useVibeMap();
 
-    const [similarTracks, setSimilarTracks] = useState<Array<{ id: string; title: string; similarity?: number; album: { id: string; title: string; coverUrl: string | null }; artist: { id: string; name: string } }>>([]);
-    const [searchResults, setSearchResults] = useState<Array<{ id: string; title: string; similarity?: number; album: { id: string; title: string; coverUrl: string | null }; artist: { id: string; name: string } }>>([]);
+    const [similarTracks, setSimilarTracks] = useState<TrackResult[]>([]);
+    const [searchResults, setSearchResults] = useState<TrackResult[]>([]);
     const [showPathPicker, setShowPathPicker] = useState(false);
     const [showAlchemy, setShowAlchemy] = useState(false);
 
@@ -61,7 +69,8 @@ export default function VibePage() {
     const handlePathMode = useCallback(() => {
         setShowPathPicker(true);
         setShowAlchemy(false);
-    }, []);
+        setMode("path-picking");
+    }, [setMode]);
 
     const handleAlchemyMode = useCallback(() => {
         setShowAlchemy(true);
@@ -71,9 +80,8 @@ export default function VibePage() {
 
     const handlePathSubmit = useCallback(async (startId: string, endId: string) => {
         setShowPathPicker(false);
-        startPathPicking(startId);
-        await completePathPicking(endId);
-    }, [startPathPicking, completePathPicking]);
+        await completePathPicking(endId, startId);
+    }, [completePathPicking]);
 
     const handleAlchemyHighlight = useCallback((ids: Set<string>) => {
         setHighlightedIds(ids);
@@ -87,9 +95,9 @@ export default function VibePage() {
         setShowAlchemy(false);
     }, [resetMode]);
 
-    const handleTrackSelect = useCallback((trackId: string) => {
-        selectTrack(trackId);
-    }, [selectTrack]);
+    const handleBackgroundClick = useCallback(() => {
+        if (mode === "idle") selectTrack(null);
+    }, [mode, selectTrack]);
 
     if (isLoading) {
         return (
@@ -135,10 +143,7 @@ export default function VibePage() {
                 mode={mode}
                 trackMap={trackMap}
                 onTrackClick={handleTrackClick}
-                onTrackHover={() => {}}
-                onBackgroundClick={() => {
-                    if (mode === "idle") selectTrack(null);
-                }}
+                onBackgroundClick={handleBackgroundClick}
             />
 
             <VibeToolbar
@@ -172,7 +177,7 @@ export default function VibePage() {
                 onClose={handleClose}
                 onShowSimilar={handleShowSimilar}
                 onStartPath={handleStartPath}
-                onTrackSelect={handleTrackSelect}
+                onTrackSelect={selectTrack}
             />
 
             <div className="absolute bottom-4 left-4 z-10 text-white/20 text-xs">

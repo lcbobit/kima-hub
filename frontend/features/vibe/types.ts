@@ -42,26 +42,4 @@ export interface PathResult {
     };
 }
 
-export interface AlchemyTrack {
-    id: string;
-    title: string;
-    duration: number;
-    distance: number;
-    similarity: number;
-    album: { id: string; title: string; coverUrl: string | null };
-    artist: { id: string; name: string };
-}
-
-export interface AlchemyResult {
-    tracks: AlchemyTrack[];
-}
-
 export type VibeMode = "idle" | "similar" | "search" | "path-picking" | "path-result" | "alchemy";
-
-export interface VibeState {
-    mode: VibeMode;
-    selectedTrackId: string | null;
-    highlightedTrackIds: Set<string>;
-    pathResult: PathResult | null;
-    searchQuery: string;
-}

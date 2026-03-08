@@ -110,9 +110,3 @@ export function getRadiusForZoom(zoom: number): number {
     return 8 + (zoom - 5) * 2;
 }
 
-/**
- * Get mood color for a line gradient segment.
- */
-export function getMoodColorRgb(mood: string): [number, number, number] {
-    return MOOD_COLORS[mood] || MOOD_COLORS.neutral;
-}
