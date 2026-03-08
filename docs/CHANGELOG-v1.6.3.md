@@ -1,6 +1,28 @@
-# v1.6.3 - Library Cleanup, OpenSubsonic, Track Identity
+# v1.6.3 - Library Cleanup, OpenSubsonic, Track Identity, Vibe Page
 
 Closes #143, #141.
+
+## Vibe Page Redesign
+
+- **deck.gl music map** -- Complete rewrite of `/vibe` page as an immersive WebGL scatter plot. UMAP projects 512-dim CLAP embeddings to 2D coordinates. Tracks rendered as colored dots by dominant mood, with cluster labels. Zoom-adaptive sizing via OrthographicView
+- **Song Path** -- Musical journey generator between two tracks. SLERP interpolation along the embedding great circle, batched pgvector candidate fetching (10 parallel queries per batch), artist diversity filter prevents 3+ consecutive same-artist tracks
+- **Song Alchemy** -- Vector arithmetic playlist generation. Add/subtract track embeddings to blend vibes (e.g. "jazz + electronic - vocals"). L2-normalized result vector queried against HNSW index
+- **Vibe search on map** -- Text search highlights matching tracks on the map with pulsing animation. Results panel with play, queue, and similar-tracks actions
+- **Similar tracks on map** -- Click any track to find neighbors. Highlights similar tracks with connecting lines and distance labels
+- **UMAP worker thread** -- Moved CPU-intensive UMAP computation to `worker_threads` to prevent event loop blocking on large libraries (15K track cap with random sampling)
+- **Content-aware cache** -- UMAP projections cached in Redis keyed by MD5 hash of sorted track IDs. Cache invalidates automatically when library changes
+- **Shared Redis subscriber** -- Text embedding bridge uses single shared `pSubscribe` connection with EventEmitter per-request routing, replacing per-request `duplicate()` connections
+- **Similarity formula fix** -- hybridSimilarity corrected from `1 - distance` to `1 - distance/2` (cosine distance range 0-2), consistent with all other endpoints
+- **Security hardening** -- CUID format validation on all track ID inputs, log injection prevention via control character stripping, query length limits
+- **ARIA accessibility** -- Labels on close/remove buttons, sr-only labels on search inputs, aria-pressed on toggle buttons across all vibe components
+- **Distinct mood colors** -- Fixed duplicate RGB values for party/electronic and acoustic/relaxed mood categories
+
+## Similarity Scoring Stabilization
+
+- **Arousal in hybrid similarity** -- Added arousal to the scalar feature set in hybrid similarity scoring
+- **NULL feature handling** -- COALESCE for NULL features in hybrid similarity returns neutral values instead of 0, preventing score deflation for unanalyzed tracks
+- **MusiCNN mood re-ranking** -- Vibe search re-ranking pipeline now uses MusiCNN mood scores (happy, sad, relaxed, aggressive, party, acoustic, electronic)
+- **Feature profile expansion** -- All 166 vocabulary terms updated with mood score targets for re-ranking alignment
 
 ## Library Cleanup (#143)
 
