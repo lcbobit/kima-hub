@@ -406,6 +406,8 @@ model PlaylistPendingTrack {
   albumMbid        String?
   artistMbid       String?
   deezerPreviewUrl String?
+  isrc             String?
+  missingFromDisk  Boolean  @default(false)
   sort             Int
   createdAt        DateTime @default(now())
   playlist         Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
@@ -428,6 +430,8 @@ model Podcast {
   lastRefreshed   DateTime                 @default(now())
   refreshInterval Int                      @default(3600)
   autoRefresh     Boolean                  @default(true)
+  feedEtag        String?
+  feedLastModified String?
   createdAt       DateTime                 @default(now())
   updatedAt       DateTime                 @updatedAt
   searchVector    Unsupported("tsvector")?
@@ -523,6 +527,7 @@ model SpotifyImportJob {
   tracksDownloadable Int      @default(0)
   createdPlaylistId  String?
   error              String?
+  sourceUrl          String?
   pendingTracks      Json
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -586,6 +591,9 @@ model Track {
   filePath                    String                   @unique
   fileModified                DateTime
   fileSize                    Int
+  isrc                        String?
+  isrcSource                  String?
+  corrupt                     Boolean                  @default(false)
   bpm                         Float?
   beatsCount                  Int?
   key                         String?
@@ -635,12 +643,14 @@ model Track {
   playlistItems               PlaylistItem[]
   trackGenres                 TrackGenre[]
   transcodedFiles             TranscodedFile[]
+  subsonicBookmarks           SubsonicBookmark[]
   trackEmbedding              TrackEmbedding?
   trackLyrics                 TrackLyrics?
 
   @@index([analysisStatus])
   @@index([vibeAnalysisStatus])
   @@index([analysisStatus, vibeAnalysisStatus])
+  @@index([isrc])
 }
 
 model TrackGenre {
@@ -720,6 +730,9 @@ model User {
   unavailableAlbums      UnavailableAlbum[]
   discoverConfig         UserDiscoverConfig?
   settings               UserSettings?
+  shareLinks             ShareLink[]
+  subsonicBookmarks      SubsonicBookmark[]
+  subsonicPlayQueue      SubsonicPlayQueue?
 }
 
 model UserDiscoverConfig {
@@ -814,6 +827,49 @@ model TrackLyrics {
   track         Track    @relation(fields: [track_id], references: [id], onDelete: Cascade)
 
   @@map("track_lyrics")
+}
+
+model ShareLink {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  entityType String
+  entityId   String
+  createdBy  String
+  expiresAt  DateTime?
+  maxPlays   Int?
+  playCount  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  user       User      @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+
+  @@index([entityType, entityId])
+  @@map("share_links")
+}
+
+model SubsonicBookmark {
+  id       String   @id @default(cuid())
+  userId   String
+  trackId  String
+  position Int      @default(0)
+  comment  String?
+  created  DateTime @default(now())
+  changed  DateTime @default(now())
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track    Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, trackId])
+  @@map("subsonic_bookmarks")
+}
+
+model SubsonicPlayQueue {
+  userId    String   @id
+  current   String?
+  position  Int      @default(0)
+  trackIds  Json     @default("[]")
+  changedBy String   @default("")
+  changed   DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subsonic_play_queue")
 }
 
 enum AlbumLocation {

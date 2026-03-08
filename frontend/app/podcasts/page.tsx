@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { Mic2, Search, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Mic2, Search, Plus, ChevronLeft, ChevronRight, RefreshCw, Rss, X, Loader2 } from "lucide-react";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
-import { usePodcastsQuery, useTopPodcastsQuery } from "@/hooks/useQueries";
+import { usePodcastsQuery, useTopPodcastsQuery, queryKeys } from "@/hooks/useQueries";
 import Image from "next/image";
 import { cn } from "@/utils/cn";
 
@@ -112,6 +112,12 @@ export default function PodcastsPage() {
     const dropdownRef = useRef<HTMLDivElement>(null);
     const { isAuthenticated } = useAuth();
     const router = useRouter();
+    const queryClient = useQueryClient();
+
+    const [showRssInput, setShowRssInput] = useState(false);
+    const [rssUrl, setRssUrl] = useState("");
+    const [isSubscribingRss, setIsSubscribingRss] = useState(false);
+    const [rssError, setRssError] = useState<string | null>(null);
 
     const { data: podcasts = [], isLoading: isLoadingPodcasts } =
         usePodcastsQuery();
@@ -134,6 +140,47 @@ export default function PodcastsPage() {
     const [currentPage, setCurrentPage] = useState(1);
 
     const isLoading = isLoadingPodcasts || isLoadingTopPodcasts;
+    const [isRefreshingAll, setIsRefreshingAll] = useState(false);
+
+    const handleRefreshAll = async () => {
+        setIsRefreshingAll(true);
+        try {
+            await api.refreshAllPodcasts();
+            queryClient.invalidateQueries({ queryKey: queryKeys.podcasts() });
+        } catch (error) {
+            console.error("Failed to refresh podcasts:", error);
+        } finally {
+            setIsRefreshingAll(false);
+        }
+    };
+
+    const handleRssSubscribe = async () => {
+        const url = rssUrl.trim();
+        if (!url) return;
+
+        try {
+            new URL(url);
+        } catch {
+            setRssError("Please enter a valid URL");
+            return;
+        }
+
+        setIsSubscribingRss(true);
+        setRssError(null);
+        try {
+            const result = await api.subscribePodcast(url);
+            if (result.success && result.podcast?.id) {
+                queryClient.invalidateQueries({ queryKey: queryKeys.podcasts() });
+                router.push(`/podcasts/${result.podcast.id}`);
+            }
+            setRssUrl("");
+            setShowRssInput(false);
+        } catch (error: unknown) {
+            setRssError(error instanceof Error ? error.message : "Failed to subscribe");
+        } finally {
+            setIsSubscribingRss(false);
+        }
+    };
 
     const sortedPodcasts = useMemo(() => {
         const sorted = [...podcasts];
@@ -247,6 +294,49 @@ export default function PodcastsPage() {
                                 <p className="text-sm font-mono text-gray-500">
                                     Subscribe, discover, and listen
                                 </p>
+                                <div className="mt-3">
+                                    {showRssInput ? (
+                                        <div className="flex gap-2 items-start">
+                                            <div className="flex-1">
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="url"
+                                                        value={rssUrl}
+                                                        onChange={(e) => { setRssUrl(e.target.value); setRssError(null); }}
+                                                        onKeyDown={(e) => e.key === "Enter" && handleRssSubscribe()}
+                                                        placeholder="https://example.com/feed.xml"
+                                                        className="flex-1 px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-[#3b82f6] text-sm"
+                                                        autoFocus
+                                                    />
+                                                    <button
+                                                        onClick={handleRssSubscribe}
+                                                        disabled={isSubscribingRss || !rssUrl.trim()}
+                                                        className="px-4 py-2.5 rounded-lg bg-[#3b82f6] hover:bg-[#2563eb] text-white text-sm font-semibold disabled:opacity-50 flex items-center gap-2 transition-all whitespace-nowrap"
+                                                    >
+                                                        {isSubscribingRss ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                                        Subscribe
+                                                    </button>
+                                                    <button
+                                                        onClick={() => { setShowRssInput(false); setRssUrl(""); setRssError(null); }}
+                                                        className="p-2.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 transition-all"
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                                {rssError && <p className="text-red-400 text-xs mt-1">{rssError}</p>}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={() => setShowRssInput(true)}
+                                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all text-xs font-mono uppercase tracking-wider"
+                                            title="Add podcast by RSS feed URL"
+                                        >
+                                            <Rss className="w-3.5 h-3.5" />
+                                            <span className="hidden md:inline">Add RSS Feed</span>
+                                        </button>
+                                    )}
+                                </div>
                             </div>
 
                             {/* Search + Stats */}
@@ -354,6 +444,15 @@ export default function PodcastsPage() {
                                     count={podcasts.length}
                                     rightAction={
                                         <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={handleRefreshAll}
+                                                disabled={isRefreshingAll}
+                                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition-all text-xs font-mono uppercase tracking-wider disabled:opacity-50"
+                                                title="Check all podcasts for new episodes"
+                                            >
+                                                <RefreshCw className={cn("w-3.5 h-3.5", isRefreshingAll && "animate-spin")} />
+                                                <span className="hidden md:inline">{isRefreshingAll ? "Refreshing..." : "Refresh All"}</span>
+                                            </button>
                                             <select
                                                 value={sortBy}
                                                 onChange={(e) => setSortBy(e.target.value as SortOption)}

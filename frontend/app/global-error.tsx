@@ -22,7 +22,7 @@ export default function GlobalError({
               Application Error
             </h2>
             <p className="text-gray-400 mb-6">
-              {error.message || 'A critical error occurred'}
+              A critical error occurred. Please reload the page.
             </p>
             <button
               onClick={reset}

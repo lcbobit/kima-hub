@@ -1,4 +1,7 @@
 import { Router } from "express";
+import multer from "multer";
+import path from "path";
+import rateLimit from "express-rate-limit";
 import { withRetry } from "../utils/async";
 import { logger } from "../utils/logger";
 import { requireAuthOrToken } from "../middleware/auth";
@@ -7,9 +10,24 @@ import { z } from "zod";
 import { spotifyService } from "../services/spotify";
 import { spotifyImportService } from "../services/spotifyImport";
 import { deezerService } from "../services/deezer";
+import { songLinkService } from "../services/songlink";
 import { readSessionLog, getSessionLogPath } from "../utils/playlistLogger";
+import { parseM3U } from "../services/m3uParser";
 
 const router = Router();
+
+const m3uUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 1 * 1024 * 1024, files: 1 },
+    fileFilter: (_req, file, cb) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        if ([".m3u", ".m3u8"].includes(ext)) {
+            cb(null, true);
+        } else {
+            cb(new Error("Only .m3u and .m3u8 files are accepted"));
+        }
+    },
+});
 
 // All routes require authentication
 router.use(requireAuthOrToken);
@@ -25,6 +43,11 @@ const importSchema = z.object({
     playlistName: z.string().min(1).max(200),
     albumMbidsToDownload: z.array(z.string()),
     previewJobId: z.string().optional(),
+});
+
+const quickImportSchema = z.object({
+    url: z.string().url(),
+    playlistName: z.string().min(1).max(200).optional(),
 });
 
 /**
@@ -73,6 +96,14 @@ router.post("/preview/start", async (req, res) => {
             return res.status(401).json({ error: "Unauthorized" });
         }
         const { url } = parseUrlSchema.parse(req.body);
+
+        const supportedDomains = ["spotify.com", "deezer.com", "youtube.com", "youtu.be", "music.youtube.com", "soundcloud.com", "bandcamp.com", "mixcloud.com"];
+        if (!supportedDomains.some(domain => url.includes(domain))) {
+            return res.status(400).json({
+                error: "Invalid URL. Supported: Spotify, Deezer, YouTube, SoundCloud, Bandcamp, Mixcloud.",
+            });
+        }
+
         logger.debug(`[Playlist Import] Starting preview job for: ${url}`);
         const { jobId } = await spotifyImportService.startPreviewJob(url, req.user.id);
         res.json({ jobId });
@@ -105,6 +136,44 @@ router.get("/preview/:jobId", async (req, res) => {
         res.json(result);
     } catch (error) {
         safeError(res, "Playlist preview fetch", error);
+    }
+});
+
+/**
+ * POST /api/spotify/import/quick
+ * Fire-and-forget import: skip preview, fetch + match + download all in background
+ */
+router.post("/import/quick", async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({ error: "Unauthorized" });
+        }
+        const { url, playlistName } = quickImportSchema.parse(req.body);
+
+        const isValidUrl = url.includes("spotify.com/playlist/")
+            || url.includes("deezer.com/playlist/")
+            || url.includes("deezer.com/playlist:")
+            || url.includes("youtube.com/playlist")
+            || url.includes("music.youtube.com/playlist")
+            || url.includes("youtube.com/watch")
+            || url.includes("youtu.be/")
+            || url.includes("soundcloud.com/")
+            || url.includes("bandcamp.com/")
+            || url.includes("mixcloud.com/");
+        if (!isValidUrl) {
+            return res.status(400).json({
+                error: "Invalid URL. Supported: Spotify, Deezer, YouTube, SoundCloud, Bandcamp, Mixcloud.",
+            });
+        }
+
+        const { jobId } = await spotifyImportService.quickImport(url, req.user.id, playlistName);
+
+        res.json({ jobId });
+    } catch (error) {
+        if (error instanceof Error && error.name === "ZodError") {
+            return res.status(400).json({ error: "Invalid request body" });
+        }
+        safeError(res, "Quick import", error);
     }
 });
 
@@ -155,6 +224,8 @@ router.post("/import", async (req, res) => {
                         .json({ error: "Deezer playlist not found" });
                 }
                 preview = await spotifyImportService.generatePreviewFromDeezer(deezerPlaylist);
+            } else if (spotifyImportService.isExternalPlatformUrl(effectiveUrl)) {
+                preview = await spotifyImportService.generatePreviewFromExternalPlatform(effectiveUrl);
             } else {
                 preview = await spotifyImportService.generatePreview(effectiveUrl);
             }
@@ -274,7 +345,7 @@ router.post("/import/:jobId/refresh", async (req, res) => {
 
 /**
  * POST /api/spotify/import/:jobId/cancel
- * Cancel an import job and create playlist with whatever succeeded
+ * Cancel an import job and clean up all artifacts
  */
 router.post("/import/:jobId/cancel", async (req, res) => {
     try {
@@ -298,12 +369,64 @@ router.post("/import/:jobId/cancel", async (req, res) => {
         res.json({
             message: result.playlistCreated
                 ? `Import cancelled. Playlist created with ${result.tracksMatched} track(s).`
-                : "Import cancelled. No tracks were downloaded.",
+                : "Import cancelled.",
             playlistId: result.playlistId,
             tracksMatched: result.tracksMatched,
         });
     } catch (error) {
         safeError(res, "Spotify cancel", error);
+    }
+});
+
+const m3uImportLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    validate: { trustProxy: false },
+    message: { error: "Too many M3U imports, please wait a minute" },
+});
+
+/**
+ * POST /api/spotify/import/m3u
+ * Upload an M3U file, parse it, match tracks against library, create playlist.
+ */
+router.post("/import/m3u", m3uImportLimiter, (req, res, next) => {
+    m3uUpload.single("file")(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.user) return res.status(401).json({ error: "Unauthorized" });
+        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+        const playlistName = req.body.playlistName?.trim();
+        if (!playlistName || playlistName.length > 200) {
+            return res.status(400).json({ error: "playlistName is required (1-200 chars)" });
+        }
+
+        const content = req.file.buffer.toString("utf-8");
+        const entries = parseM3U(content);
+
+        if (entries.length === 0) {
+            return res.status(400).json({ error: "M3U file contains no entries" });
+        }
+
+        const result = await spotifyImportService.importFromM3U(
+            req.user.id,
+            playlistName,
+            entries,
+        );
+
+        res.json(result);
+    } catch (error: any) {
+        if (error.message?.includes("exceeds maximum") || error.message?.includes("null bytes")) {
+            return res.status(400).json({ error: error.message });
+        }
+        safeError(res, "M3U import", error);
     }
 });
 

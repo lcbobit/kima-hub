@@ -21,7 +21,7 @@ test.describe("Authentication", () => {
     });
 
     test("protected routes redirect to login when unauthenticated", async ({ page }) => {
-        await page.goto("/library");
+        await page.goto("/collection");
         await expect(page).toHaveURL(/login/);
     });
 

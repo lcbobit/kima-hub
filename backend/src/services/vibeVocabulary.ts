@@ -164,7 +164,7 @@ export function expandQueryWithVocabulary(
     }
 
     // Calculate genre confidence (highest similarity to a genre term)
-    const genreMatches = matches.filter(m => m.term.type === "genre");
+    const genreMatches = matches.filter(m => m.term.type === "genre" || m.term.type === "subgenre");
     const genreConfidence = genreMatches.length > 0 ? genreMatches[0].similarity : 0;
 
     // Blend embeddings: 60% original query, 40% distributed among matches
@@ -197,7 +197,9 @@ export function blendFeatureProfiles(terms: VocabTerm[]): FeatureProfile {
     if (terms.length === 0) return {};
 
     const features = ["energy", "valence", "danceability", "acousticness",
-                      "instrumentalness", "arousal", "speechiness"] as const;
+                      "instrumentalness", "arousal", "moodHappy", "moodSad",
+                      "moodRelaxed", "moodAggressive", "moodParty",
+                      "moodAcoustic", "moodElectronic"] as const;
 
     const result: FeatureProfile = {};
 
@@ -221,13 +223,29 @@ export function calculateFeatureMatch(
     trackFeatures: Record<string, number | null>,
     targetProfile: FeatureProfile
 ): number {
+    const nullDefaults: Record<string, number> = {
+        energy: 0.5,
+        valence: 0.5,
+        danceability: 0.5,
+        acousticness: 0.5,
+        instrumentalness: 0.5,
+        arousal: 0.5,
+        moodHappy: 0.5,
+        moodSad: 0.5,
+        moodRelaxed: 0.5,
+        moodAggressive: 0.5,
+        moodParty: 0.5,
+        moodAcoustic: 0.5,
+        moodElectronic: 0.5,
+    };
+
     let score = 0;
     let count = 0;
 
     for (const [feature, targetValue] of Object.entries(targetProfile)) {
         if (targetValue === undefined) continue;
 
-        const trackValue = trackFeatures[feature] ?? 0.5;
+        const trackValue = trackFeatures[feature] ?? nullDefaults[feature] ?? 0.5;
         const match = 1 - Math.abs(trackValue - targetValue);
         score += match;
         count++;
@@ -237,7 +255,9 @@ export function calculateFeatureMatch(
 }
 
 /**
- * Re-rank CLAP candidates using audio features
+ * Re-rank CLAP candidates using audio features.
+ * Intentionally omits BPM and key (used in hybrid similarity) --
+ * those are structural features for DJ-style track matching, not text-to-audio matching.
  */
 export function rerankWithFeatures<T extends {
     id: string;
@@ -248,7 +268,13 @@ export function rerankWithFeatures<T extends {
     acousticness?: number | null;
     instrumentalness?: number | null;
     arousal?: number | null;
-    speechiness?: number | null;
+    moodHappy?: number | null;
+    moodSad?: number | null;
+    moodRelaxed?: number | null;
+    moodAggressive?: number | null;
+    moodParty?: number | null;
+    moodAcoustic?: number | null;
+    moodElectronic?: number | null;
 }>(
     candidates: T[],
     matchedTerms: VocabTerm[],
@@ -278,7 +304,13 @@ export function rerankWithFeatures<T extends {
             acousticness: track.acousticness ?? null,
             instrumentalness: track.instrumentalness ?? null,
             arousal: track.arousal ?? null,
-            speechiness: track.speechiness ?? null
+            moodHappy: track.moodHappy ?? null,
+            moodSad: track.moodSad ?? null,
+            moodRelaxed: track.moodRelaxed ?? null,
+            moodAggressive: track.moodAggressive ?? null,
+            moodParty: track.moodParty ?? null,
+            moodAcoustic: track.moodAcoustic ?? null,
+            moodElectronic: track.moodElectronic ?? null,
         };
 
         const featureScore = Object.keys(targetProfile).length > 0

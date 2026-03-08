@@ -5,8 +5,9 @@ import { prisma } from "../../utils/db";
 import { subsonicOk, subsonicError, SubsonicError } from "../../utils/subsonicResponse";
 import { getAudioStreamingService } from "../../services/audioStreaming";
 import { config } from "../../config";
-import { bitrateToQuality, wrap } from "./mappers";
+import { bitrateToQuality, firstArtistGenre, mapSong, wrap } from "./mappers";
 import { ListenSource } from "@prisma/client";
+import { normalizeArtistName } from "../../utils/artistNormalization";
 
 export const playbackRouter = Router();
 
@@ -190,4 +191,180 @@ playbackRouter.all("/scrobble.view", wrap(async (req, res) => {
     }
 
     return subsonicOk(req, res);
+}));
+
+// ===================== LYRICS =====================
+
+// ===================== PLAY QUEUE =====================
+
+playbackRouter.all("/savePlayQueue.view", wrap(async (req, res) => {
+    const userId = req.user!.id;
+    const ids = [req.query.id].flat().filter(Boolean) as string[];
+    const current = (req.query.current as string) || null;
+    const position = parseInt((req.query.position as string) || "0", 10) || 0;
+    const changedBy = (req.query.c as string) || "";
+
+    await prisma.subsonicPlayQueue.upsert({
+        where: { userId },
+        create: { userId, trackIds: ids, current, position, changedBy, changed: new Date() },
+        update: { trackIds: ids, current, position, changedBy, changed: new Date() },
+    });
+
+    return subsonicOk(req, res);
+}));
+
+playbackRouter.all("/getPlayQueue.view", wrap(async (req, res) => {
+    const userId = req.user!.id;
+    const queue = await prisma.subsonicPlayQueue.findUnique({ where: { userId } });
+
+    if (!queue) {
+        return subsonicOk(req, res, { playQueue: {} });
+    }
+
+    const trackIds = queue.trackIds as string[];
+    if (trackIds.length === 0) {
+        return subsonicOk(req, res, { playQueue: {} });
+    }
+
+    const tracks = await prisma.track.findMany({
+        where: { id: { in: trackIds } },
+        include: { album: { include: { artist: true } } },
+    });
+
+    const trackMap = new Map(tracks.map((t) => [t.id, t]));
+    const orderedEntries = trackIds
+        .map((id) => trackMap.get(id))
+        .filter(Boolean)
+        .map((t) => {
+            const artist = t!.album.artist;
+            return mapSong(
+                t!,
+                t!.album,
+                artist.displayName || artist.name,
+                artist.id,
+                firstArtistGenre(artist.genres, artist.userGenres),
+            );
+        });
+
+    return subsonicOk(req, res, {
+        playQueue: {
+            "@_current": queue.current || undefined,
+            "@_position": queue.position,
+            "@_username": req.user!.username,
+            "@_changed": queue.changed.toISOString(),
+            "@_changedBy": queue.changedBy || undefined,
+            entry: orderedEntries,
+        },
+    });
+}));
+
+// ===================== BOOKMARKS =====================
+
+playbackRouter.all("/getBookmarks.view", wrap(async (req, res) => {
+    const userId = req.user!.id;
+    const bookmarks = await prisma.subsonicBookmark.findMany({
+        where: { userId },
+        include: { track: { include: { album: { include: { artist: true } } } } },
+    });
+
+    const bookmarkEntries = bookmarks.map((b) => {
+        const track = b.track;
+        const album = track.album;
+        const artist = album.artist;
+        return {
+            "@_position": b.position,
+            "@_username": req.user!.username,
+            "@_comment": b.comment || undefined,
+            "@_created": b.created.toISOString(),
+            "@_changed": b.changed.toISOString(),
+            entry: mapSong(
+                track,
+                album,
+                artist.displayName || artist.name,
+                artist.id,
+                firstArtistGenre(artist.genres, artist.userGenres),
+            ),
+        };
+    });
+
+    return subsonicOk(req, res, {
+        bookmarks: bookmarkEntries.length ? { bookmark: bookmarkEntries } : {},
+    });
+}));
+
+playbackRouter.all("/createBookmark.view", wrap(async (req, res) => {
+    const userId = req.user!.id;
+    const id = req.query.id as string;
+    const positionRaw = req.query.position as string;
+    if (!id) return subsonicError(req, res, SubsonicError.MISSING_PARAM, "Required parameter is missing: id");
+    if (positionRaw === undefined || positionRaw === "") {
+        return subsonicError(req, res, SubsonicError.MISSING_PARAM, "Required parameter is missing: position");
+    }
+
+    const position = parseInt(positionRaw, 10);
+    if (isNaN(position)) {
+        return subsonicError(req, res, SubsonicError.MISSING_PARAM, "Invalid parameter: position");
+    }
+
+    const comment = (req.query.comment as string) || undefined;
+
+    await prisma.subsonicBookmark.upsert({
+        where: { userId_trackId: { userId, trackId: id } },
+        create: { userId, trackId: id, position, comment: comment ?? null },
+        update: { position, comment: comment ?? null, changed: new Date() },
+    });
+
+    return subsonicOk(req, res);
+}));
+
+playbackRouter.all("/deleteBookmark.view", wrap(async (req, res) => {
+    const userId = req.user!.id;
+    const id = req.query.id as string;
+    if (!id) return subsonicError(req, res, SubsonicError.MISSING_PARAM, "Required parameter is missing: id");
+
+    await prisma.subsonicBookmark.deleteMany({
+        where: { userId, trackId: id },
+    });
+
+    return subsonicOk(req, res);
+}));
+
+// ===================== LYRICS =====================
+
+playbackRouter.all("/getLyrics.view", wrap(async (req, res) => {
+    const artist = (req.query.artist as string | undefined)?.trim();
+    const title = (req.query.title as string | undefined)?.trim();
+
+    if (!artist && !title) {
+        return subsonicOk(req, res, { lyrics: {} });
+    }
+
+    const normalizedArtist = artist ? normalizeArtistName(artist) : undefined;
+
+    const track = await prisma.track.findFirst({
+        where: {
+            ...(title ? { title: { contains: title, mode: "insensitive" as const } } : {}),
+            ...(normalizedArtist ? {
+                album: {
+                    artist: { normalizedName: normalizedArtist },
+                },
+            } : {}),
+        },
+        include: { trackLyrics: true, album: { include: { artist: true } } },
+    });
+
+    if (!track?.trackLyrics) {
+        return subsonicOk(req, res, { lyrics: {} });
+    }
+
+    const lyricsText = track.trackLyrics.plain_lyrics || track.trackLyrics.synced_lyrics || undefined;
+    const result: Record<string, unknown> = {
+        "@_artist": track.album.artist.name,
+        "@_title": track.title,
+    };
+    if (lyricsText) {
+        result["#text"] = lyricsText;
+    }
+
+    return subsonicOk(req, res, { lyrics: result });
 }));

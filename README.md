@@ -58,7 +58,7 @@ Thanks for your patience while I work through this.
 ### Your Music, Your Way
 
 -   **Stream your library** - FLAC, MP3, AAC, OGG, and other common formats work out of the box
--   **Automatic cataloging** - Kima scans your library and enriches it with metadata from MusicBrainz and Last.fm
+-   **Automatic cataloging** - Kima scans your library and enriches it with metadata from MusicBrainz and Last.fm, including ISRC codes and genre tags
 -   **Audio transcoding** - Stream at original quality or transcode on-the-fly (320kbps, 192kbps, or 128kbps)
 -   **Lyrics** - Displays embedded lyrics or fetches them automatically from LRCLIB. Timed lyrics get line-by-line sync during playback; untimed lyrics display as static text. Coverage is good for major artists but varies for niche or independent music\*
 -   **Ultra-wide support** - Library grid scales up to 8 columns on large displays
@@ -130,10 +130,12 @@ Kima's standout feature for music discovery. While playing any track, activate v
 
 ### Playlist Import
 
-Import playlists from Spotify and Deezer, or browse and discover new music directly.
+Import playlists from Spotify, Deezer, and YouTube, or browse and discover new music directly.
 
 -   **Spotify Import** - Paste any Spotify playlist URL to import tracks
 -   **Deezer Import** - Same functionality for Deezer playlists
+-   **YouTube Import** - Import from YouTube and YouTube Music playlists
+-   **ISRC Matching** - Deterministic track matching via International Standard Recording Codes before falling back to fuzzy text matching
 -   **Smart Preview** - See which tracks are already in your library, which albums can be downloaded, and which have no matches
 -   **Selective Download** - Choose exactly which albums to add to your library
 -   **Browse Deezer** - Explore Deezer's featured playlists and radio stations directly in-app
@@ -151,6 +153,7 @@ Import playlists from Spotify and Deezer, or browse and discover new music direc
 -   **Standard Subsonic auth** - MD5 token auth supported; enter your API token as the password — works with Amperfy, Symfonium, DSub, and any standard Subsonic client
 -   **Per-client tokens** - Generate named API tokens in Settings > Native Apps; revoke them individually when a device is lost or replaced
 -   **Enrichment-aware** - Genres and artist biographies exposed to clients come from Last.fm enrichment, not just file tags
+-   **Lyrics, bookmarks, and play queue** - getLyrics, bookmarks, and savePlayQueue/getPlayQueue for cross-device resume
 
 ### Multi-User Support
 
@@ -766,6 +769,13 @@ Your listening progress is saved automatically, so you can pause on one device a
 2. The same preview and import flow applies
 3. Explore Deezer's curated playlists and radio stations for discovery
 
+**From YouTube:**
+
+1. Copy a YouTube or YouTube Music playlist URL
+2. Paste it in the import field on the Playlists page
+3. Kima extracts individual tracks and resolves them via song.link to identify each one
+4. The same preview and import flow applies
+
 ### Playback Settings
 
 In Settings, you can configure:
@@ -946,7 +956,8 @@ Kima wouldn't be possible without these services and projects:
 -   [Last.fm](https://www.last.fm/) - Artist recommendations and music metadata
 -   [MusicBrainz](https://musicbrainz.org/) - Comprehensive music database
 -   [iTunes Search API](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/) - Podcast discovery
--   [Deezer](https://developers.deezer.com/) - Track previews
+-   [Deezer](https://developers.deezer.com/) - Track previews and playlist browsing
+-   [Odesli/song.link](https://odesli.co/) - Cross-platform music link resolution
 -   [Fanart.tv](https://fanart.tv/) - Artist images and artwork
 -   [Lidarr](https://lidarr.audio/) - Music collection management
 -   [Audiobookshelf](https://www.audiobookshelf.org/) - Audiobook and podcast server

@@ -15,7 +15,7 @@ import { RefreshCw, SkipBack, SkipForward, Shuffle, Repeat } from "lucide-react"
 const tvNavigation = [
     { name: "Home", href: "/" },
     { name: "Search", href: "/search" },
-    { name: "Library", href: "/library" },
+    { name: "Collection", href: "/collection" },
     { name: "Audiobooks", href: "/audiobooks" },
     { name: "Podcasts", href: "/podcasts" },
     { name: "Discovery", href: "/discover" },

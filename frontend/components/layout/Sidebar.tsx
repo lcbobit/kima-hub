@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { Plus, Settings, RefreshCw } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/hooks/useQueries";
 import { useAudioState } from "@/lib/audio-state-context";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useToast } from "@/lib/toast-context";
@@ -15,7 +16,7 @@ import Image from "next/image";
 import { MobileSidebar } from "./MobileSidebar";
 
 const navigation = [
-    { name: "Collection", href: "/library" },
+    { name: "Collection", href: "/collection" },
     { name: "Radio", href: "/radio" },
     { name: "Discovery", href: "/discover" },
     { name: "Audiobooks", href: "/audiobooks" },
@@ -34,6 +35,8 @@ interface Playlist {
 
 export function Sidebar() {
     const pathname = usePathname();
+    const router = useRouter();
+    const queryClient = useQueryClient();
     const { isAuthenticated } = useAuth();
     const { toast } = useToast();
     const { currentTrack, currentAudiobook, currentPodcast, playbackType } =
@@ -44,6 +47,10 @@ export function Sidebar() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [isSyncing, setIsSyncing] = useState(false);
     const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+    const [newPlaylistName, setNewPlaylistName] = useState("");
+    const [isCreating, setIsCreating] = useState(false);
+    const createPopoverRef = useRef<HTMLDivElement>(null);
 
     const { data: playlists = [], isLoading: isLoadingPlaylists } = useQuery<
         Playlist[]
@@ -106,6 +113,43 @@ export function Sidebar() {
         return () =>
             window.removeEventListener("toggle-mobile-menu", handleToggle);
     }, []);
+
+    // Close create popover on click outside
+    useEffect(() => {
+        if (!showCreatePlaylist) return;
+        const handleClickOutside = (e: MouseEvent) => {
+            if (
+                createPopoverRef.current &&
+                !createPopoverRef.current.contains(e.target as Node)
+            ) {
+                setShowCreatePlaylist(false);
+                setNewPlaylistName("");
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () =>
+            document.removeEventListener("mousedown", handleClickOutside);
+    }, [showCreatePlaylist]);
+
+    const handleCreatePlaylist = async () => {
+        const name = newPlaylistName.trim();
+        if (!name || isCreating) return;
+        try {
+            setIsCreating(true);
+            const result = await api.createPlaylist(name);
+            await queryClient.invalidateQueries({
+                queryKey: queryKeys.playlists(),
+            });
+            setShowCreatePlaylist(false);
+            setNewPlaylistName("");
+            router.push(`/playlist/${result.id}`);
+        } catch (error) {
+            console.error("Failed to create playlist:", error);
+            toast.error("Failed to create playlist");
+        } finally {
+            setIsCreating(false);
+        }
+    };
 
     // Don't show sidebar on login/register pages
     // (Check after all hooks to comply with Rules of Hooks)
@@ -299,15 +343,50 @@ export function Sidebar() {
                             </span>
                         </Link>
                     </div>
-                    <Link
-                        href="/playlists"
-                        prefetch={false}
-                        className="w-6 h-6 flex items-center justify-center bg-[#0a0a0a] border-2 border-white/10 text-gray-500 hover:text-[#a855f7] hover:border-[#a855f7]/50 hover:bg-[#a855f7]/5 transition-all"
-                        aria-label="Create playlist"
-                        title="Create Playlist"
-                    >
-                        <Plus className="w-3.5 h-3.5" />
-                    </Link>
+                    <div className="relative" ref={createPopoverRef}>
+                        <button
+                            onClick={() => {
+                                setShowCreatePlaylist((v) => !v);
+                                setNewPlaylistName("");
+                            }}
+                            className="w-6 h-6 flex items-center justify-center bg-[#0a0a0a] border-2 border-white/10 text-gray-500 hover:text-[#a855f7] hover:border-[#a855f7]/50 hover:bg-[#a855f7]/5 transition-all"
+                            aria-label="Create playlist"
+                            title="Create Playlist"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
+                        {showCreatePlaylist && (
+                            <div className="absolute right-0 top-8 z-50 w-56 bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl p-3">
+                                <input
+                                    type="text"
+                                    value={newPlaylistName}
+                                    onChange={(e) =>
+                                        setNewPlaylistName(e.target.value)
+                                    }
+                                    onKeyDown={(e) => {
+                                        if (e.key === "Enter")
+                                            handleCreatePlaylist();
+                                        if (e.key === "Escape") {
+                                            setShowCreatePlaylist(false);
+                                            setNewPlaylistName("");
+                                        }
+                                    }}
+                                    placeholder="Playlist name"
+                                    autoFocus
+                                    className="w-full bg-[#0a0a0a] border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder-gray-600 outline-none focus:border-[#a855f7]/50 transition-colors"
+                                />
+                                <button
+                                    onClick={handleCreatePlaylist}
+                                    disabled={
+                                        !newPlaylistName.trim() || isCreating
+                                    }
+                                    className="mt-2 w-full py-1.5 bg-[#a855f7] hover:bg-[#9333ea] disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold uppercase tracking-wider rounded transition-colors"
+                                >
+                                    {isCreating ? "Creating..." : "Create"}
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
                 <div
                     className={cn(

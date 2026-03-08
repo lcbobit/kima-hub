@@ -11,6 +11,7 @@ import { cn } from "@/utils/cn";
 import { formatTime } from "@/utils/formatTime";
 import { api } from "@/lib/api";
 import { useAudioState } from "@/lib/audio-state-context";
+import { useDoubleTap } from "@/hooks/useDoubleTap";
 
 interface TracksListProps {
     tracks: Track[];
@@ -42,15 +43,16 @@ const TrackRow = memo(
         onShowAddToPlaylist,
         onDelete,
     }: TrackRowProps) {
+        const doubleTapProps = useDoubleTap(onPlayTrack);
         return (
             <div
                 key={track.id}
-                onDoubleClick={onPlayTrack}
+                {...doubleTapProps}
                 data-tv-card
                 data-tv-card-index={index}
                 tabIndex={0}
                 className={cn(
-                    "grid grid-cols-[auto_1fr_auto] md:grid-cols-[auto_1fr_1fr_auto] items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all group cursor-pointer",
+                    "grid grid-cols-[auto_1fr_auto] md:grid-cols-[auto_1fr_1fr_auto] items-center gap-3 px-4 py-3 rounded-lg border-2 transition-all group cursor-pointer touch-manipulation",
                     isCurrentlyPlaying
                         ? "bg-[#a855f7]/10 border-[#a855f7]/30 shadow-lg shadow-[#a855f7]/10"
                         : "bg-[#0a0a0a] border-white/5 hover:border-[#a855f7]/30 hover:bg-[#a855f7]/5",

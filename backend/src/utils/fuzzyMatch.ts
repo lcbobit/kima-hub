@@ -3,31 +3,10 @@
  * Part of Phase 3 fix for #31 - Active downloads not resolving
  */
 
-/**
- * Normalize a string for fuzzy matching
- * Removes common variations that prevent exact matching
- */
+import { normalizeString, stripTrackSuffix } from "./normalization";
+
 export function normalizeForMatching(str: string): string {
-    return (
-        str
-            .toLowerCase()
-            .trim()
-            // Remove common articles
-            .replace(/^(the|a|an)\s+/i, "")
-            // Remove parenthetical content (deluxe edition, remaster, etc.)
-            .replace(/\s*\(.*?\)\s*/g, " ")
-            .replace(/\s*\[.*?\]\s*/g, " ")
-            // Remove edition markers
-            .replace(
-                /\s*[-–—]\s*(deluxe|remaster|bonus|special|anniversary|expanded|limited|collector|edition).*$/i,
-                ""
-            )
-            // Remove punctuation except spaces
-            .replace(/[^\w\s]/g, "")
-            // Normalize whitespace
-            .replace(/\s+/g, " ")
-            .trim()
-    );
+    return normalizeString(stripTrackSuffix(str.replace(/^(the|a|an)\s+/i, "")));
 }
 
 /**

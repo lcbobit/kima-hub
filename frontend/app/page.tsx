@@ -60,7 +60,7 @@ export default function HomePage() {
                         {/* Continue Listening */}
                         {recentlyListened.length > 0 && (
                             <section>
-                                <SectionHeader title="Continue Listening" showAllHref="/library?tab=artists" color="featured" />
+                                <SectionHeader title="Continue Listening" showAllHref="/collection?tab=artists" color="featured" />
                                 <ContinueListening items={recentlyListened} />
                             </section>
                         )}
@@ -68,7 +68,7 @@ export default function HomePage() {
                         {/* Recently Added */}
                         {recentlyAdded.length > 0 && (
                             <section>
-                                <SectionHeader title="Recently Added" showAllHref="/library?tab=artists" color="artists" />
+                                <SectionHeader title="Recently Added" showAllHref="/collection?tab=artists" color="artists" />
                                 <ArtistsGrid artists={recentlyAdded} />
                             </section>
                         )}

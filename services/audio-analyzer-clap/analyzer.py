@@ -275,6 +275,180 @@ class CLAPAnalyzer:
             traceback.print_exc()
             return None
 
+    def detect_vocals(self, audio_embedding: np.ndarray) -> float:
+        """
+        Zero-shot vocal detection using CLAP text-audio similarity.
+        Returns instrumentalness score (0 = vocals present, 1 = instrumental).
+        """
+        self.ensure_model()
+
+        if not hasattr(self, '_vocal_text_embs') or self._vocal_text_embs is None:
+            with self._lock:
+                if not hasattr(self, '_vocal_text_embs') or self._vocal_text_embs is None:
+                    vocal_prompts = [
+                        "music with singing vocals",
+                        "song with a singer",
+                        "vocal music with lyrics",
+                    ]
+                    instrumental_prompts = [
+                        "instrumental music without vocals",
+                        "instrumental track with no singing",
+                        "music without any vocals or singing",
+                    ]
+                    self._vocal_text_embs = self.model.get_text_embedding(
+                        vocal_prompts, use_tensor=False
+                    )
+                    self._instr_text_embs = self.model.get_text_embedding(
+                        instrumental_prompts, use_tensor=False
+                    )
+                    logger.info("Cached vocal/instrumental text embeddings for zero-shot detection")
+
+        audio_norm = audio_embedding / (np.linalg.norm(audio_embedding) + 1e-8)
+
+        vocal_sims = []
+        for emb in self._vocal_text_embs:
+            emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+            vocal_sims.append(float(np.dot(audio_norm, emb_norm)))
+
+        instr_sims = []
+        for emb in self._instr_text_embs:
+            emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+            instr_sims.append(float(np.dot(audio_norm, emb_norm)))
+
+        avg_vocal = np.mean(vocal_sims)
+        avg_instr = np.mean(instr_sims)
+
+        # Temperature-scaled softmax (T=15 amplifies small cosine sim differences)
+        T = 15
+        exp_vocal = np.exp(avg_vocal * T)
+        exp_instr = np.exp(avg_instr * T)
+        instrumentalness = float(exp_instr / (exp_vocal + exp_instr))
+
+        return round(max(0.0, min(1.0, instrumentalness)), 3)
+
+    def detect_acousticness(self, audio_embedding: np.ndarray) -> float:
+        """
+        Zero-shot acoustic vs electronic detection using CLAP text-audio similarity.
+        Returns acousticness score (0 = electronic/synthesized, 1 = acoustic/organic).
+        """
+        self.ensure_model()
+
+        if not hasattr(self, '_acoustic_text_embs') or self._acoustic_text_embs is None:
+            with self._lock:
+                if not hasattr(self, '_acoustic_text_embs') or self._acoustic_text_embs is None:
+                    acoustic_prompts = [
+                        "soft acoustic guitar and piano music",
+                        "unplugged unamplified intimate performance",
+                        "gentle stripped-back acoustic recording",
+                    ]
+                    electronic_prompts = [
+                        "heavily produced studio track with electric instruments",
+                        "distorted electric guitar and amplified drums",
+                        "polished pop production with layered synths and effects",
+                    ]
+                    self._acoustic_text_embs = self.model.get_text_embedding(
+                        acoustic_prompts, use_tensor=False
+                    )
+                    self._electronic_text_embs = self.model.get_text_embedding(
+                        electronic_prompts, use_tensor=False
+                    )
+                    logger.info("Cached acoustic/electronic text embeddings for zero-shot detection")
+
+        audio_norm = audio_embedding / (np.linalg.norm(audio_embedding) + 1e-8)
+
+        acoustic_sims = []
+        for emb in self._acoustic_text_embs:
+            emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+            acoustic_sims.append(float(np.dot(audio_norm, emb_norm)))
+
+        electronic_sims = []
+        for emb in self._electronic_text_embs:
+            emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+            electronic_sims.append(float(np.dot(audio_norm, emb_norm)))
+
+        avg_acoustic = np.mean(acoustic_sims)
+        avg_electronic = np.mean(electronic_sims)
+
+        T = 15
+        exp_acoustic = np.exp(avg_acoustic * T)
+        exp_electronic = np.exp(avg_electronic * T)
+        acousticness = float(exp_acoustic / (exp_acoustic + exp_electronic))
+
+        return round(max(0.0, min(1.0, acousticness)), 3)
+
+    def detect_emotion(self, audio_embedding: np.ndarray) -> tuple:
+        """
+        Zero-shot valence/arousal detection using CLAP text-audio similarity.
+        Returns (valence, arousal) tuple, each in [0, 1].
+        Valence: 0 = sad/dark, 1 = happy/bright
+        Arousal: 0 = calm/quiet, 1 = intense/energetic
+        """
+        self.ensure_model()
+
+        if not hasattr(self, '_happy_text_embs') or self._happy_text_embs is None:
+            with self._lock:
+                if not hasattr(self, '_happy_text_embs') or self._happy_text_embs is None:
+                    happy_prompts = [
+                        "happy cheerful uplifting music",
+                        "joyful bright positive song",
+                        "feel good upbeat music",
+                    ]
+                    sad_prompts = [
+                        "sad melancholic somber music",
+                        "dark gloomy depressing song",
+                        "sorrowful mournful music",
+                    ]
+                    high_energy_prompts = [
+                        "intense energetic powerful music",
+                        "loud fast aggressive song",
+                        "high energy driving music",
+                    ]
+                    low_energy_prompts = [
+                        "calm relaxing peaceful music",
+                        "soft quiet gentle song",
+                        "mellow soothing ambient music",
+                    ]
+                    self._happy_text_embs = self.model.get_text_embedding(
+                        happy_prompts, use_tensor=False
+                    )
+                    self._sad_text_embs = self.model.get_text_embedding(
+                        sad_prompts, use_tensor=False
+                    )
+                    self._high_energy_text_embs = self.model.get_text_embedding(
+                        high_energy_prompts, use_tensor=False
+                    )
+                    self._low_energy_text_embs = self.model.get_text_embedding(
+                        low_energy_prompts, use_tensor=False
+                    )
+                    logger.info("Cached emotion text embeddings for zero-shot valence/arousal")
+
+        audio_norm = audio_embedding / (np.linalg.norm(audio_embedding) + 1e-8)
+
+        def _avg_sim(embeddings):
+            sims = []
+            for emb in embeddings:
+                emb_norm = emb / (np.linalg.norm(emb) + 1e-8)
+                sims.append(float(np.dot(audio_norm, emb_norm)))
+            return np.mean(sims)
+
+        avg_happy = _avg_sim(self._happy_text_embs)
+        avg_sad = _avg_sim(self._sad_text_embs)
+        T = 15
+        exp_happy = np.exp(avg_happy * T)
+        exp_sad = np.exp(avg_sad * T)
+        valence = float(exp_happy / (exp_happy + exp_sad))
+
+        avg_high = _avg_sim(self._high_energy_text_embs)
+        avg_low = _avg_sim(self._low_energy_text_embs)
+        exp_high = np.exp(avg_high * T)
+        exp_low = np.exp(avg_low * T)
+        arousal = float(exp_high / (exp_high + exp_low))
+
+        return (
+            round(max(0.0, min(1.0, valence)), 3),
+            round(max(0.0, min(1.0, arousal)), 3),
+        )
+
 
 class DatabaseConnection:
     """PostgreSQL connection manager with pgvector support and auto-reconnect"""
@@ -466,13 +640,33 @@ class BullMQVibeWorker:
             )
             raise RuntimeError("Embedding generation failed")
 
+        # === CLAP zero-shot feature detection ===
+        instrumentalness = await loop.run_in_executor(
+            None, self.analyzer.detect_vocals, embedding
+        )
+        acousticness = await loop.run_in_executor(
+            None, self.analyzer.detect_acousticness, embedding
+        )
+        clap_valence, clap_arousal = await loop.run_in_executor(
+            None, self.analyzer.detect_emotion, embedding
+        )
+
         success = await loop.run_in_executor(None, self._store_embedding, track_id, embedding)
 
         if success:
+            await loop.run_in_executor(
+                None, self._update_clap_features, track_id,
+                instrumentalness, acousticness,
+                clap_valence, clap_arousal
+            )
             await loop.run_in_executor(None, self._update_track_status, track_id, "completed")
             await loop.run_in_executor(None, self._report_success, track_id)
             await job.updateProgress(100)
-            logger.info(f"[BullMQ] Completed vibe for track: {track_id}")
+            logger.info(
+                f"[BullMQ] Completed vibe for track: {track_id} "
+                f"(instr={instrumentalness}, acoustic={acousticness}, "
+                f"valence={clap_valence}, arousal={clap_arousal})"
+            )
             return {"trackId": track_id, "status": "complete"}
         else:
             await loop.run_in_executor(
@@ -492,6 +686,56 @@ class BullMQVibeWorker:
             conn.commit()
         except Exception as e:
             logger.error(f"Failed to update track vibe status: {e}")
+            conn.rollback()
+        finally:
+            self._db_pool.putconn(conn)
+
+    def _update_clap_features(
+        self, track_id: str,
+        instrumentalness: float, acousticness: float,
+        clap_valence: float, clap_arousal: float
+    ):
+        """Update all CLAP-derived features on the Track, blending V/A with DEAM if available."""
+        conn = self._db_pool.getconn()
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Read existing DEAM-derived V/A (written by Essentia analyzer phase)
+                cursor.execute(
+                    'SELECT valence, arousal FROM "Track" WHERE id = %s',
+                    (track_id,)
+                )
+                row = cursor.fetchone()
+                deam_valence = row['valence'] if row else None
+                deam_arousal = row['arousal'] if row else None
+
+                # Blend: DEAM + CLAP if DEAM available, else pure CLAP
+                if deam_valence is not None:
+                    final_valence = round(0.7 * deam_valence + 0.3 * clap_valence, 3)
+                else:
+                    final_valence = clap_valence
+
+                if deam_arousal is not None:
+                    final_arousal = round(0.5 * deam_arousal + 0.5 * clap_arousal, 3)
+                else:
+                    final_arousal = clap_arousal
+
+                cursor.execute(
+                    """UPDATE "Track"
+                    SET instrumentalness = %s, acousticness = %s,
+                        valence = %s, arousal = %s
+                    WHERE id = %s""",
+                    (instrumentalness, acousticness,
+                     final_valence, final_arousal, track_id),
+                )
+            conn.commit()
+            logger.debug(
+                f"CLAP features for {track_id}: instr={instrumentalness}, "
+                f"acoustic={acousticness}, "
+                f"valence={final_valence} (deam={deam_valence}, clap={clap_valence}), "
+                f"arousal={final_arousal} (deam={deam_arousal}, clap={clap_arousal})"
+            )
+        except Exception as e:
+            logger.error(f"Failed to update CLAP features for {track_id}: {e}")
             conn.rollback()
         finally:
             self._db_pool.putconn(conn)

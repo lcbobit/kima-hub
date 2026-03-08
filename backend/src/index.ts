@@ -39,7 +39,9 @@ import analysisRoutes from "./routes/analysis";
 import releasesRoutes from "./routes/releases";
 import vibeRoutes from "./routes/vibe";
 import systemRoutes from "./routes/system";
+import shareRoutes from "./routes/share";
 import eventsRoutes from "./routes/events";
+import eventsTicketRoutes from "./routes/eventsTicket";
 import { subsonicRouter } from "./routes/subsonic/index";
 import { dataCacheService } from "./services/dataCache";
 import { enrichmentStateService } from "./services/enrichmentState";
@@ -94,7 +96,14 @@ app.use(
         credentials: true,
     })
 );
-app.use(express.json({ limit: "1mb" })); // Increased from 100KB default to support large queue payloads
+const defaultJsonParser = express.json({ limit: "1mb" });
+const largeJsonParser = express.json({ limit: "5mb" });
+app.use((req, res, next) => {
+    if (req.path.startsWith("/api/playback-state")) {
+        return largeJsonParser(req, res, next);
+    }
+    return defaultJsonParser(req, res, next);
+});
 
 // Session
 // Trust proxy for reverse proxy setups (nginx, traefik, etc.)
@@ -130,6 +139,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/onboarding/register", authLimiter);
 app.use("/api/onboarding", onboardingRoutes);
 
+// Public share routes (GET/stream are unauthenticated; POST/DELETE self-protect with requireAuth)
+app.use("/api/share", shareRoutes);
+
 // Apply general API rate limiting to all API routes
 app.use("/api/api-keys", apiLimiter, apiKeysRoutes);
 app.use("/api/device-link", apiLimiter, deviceLinkRoutes);
@@ -162,6 +174,8 @@ app.use("/api/analysis", apiLimiter, analysisRoutes);
 app.use("/api/releases", apiLimiter, releasesRoutes);
 app.use("/api/vibe", apiLimiter, vibeRoutes);
 app.use("/api/system", apiLimiter, systemRoutes);
+// SSE ticket endpoint (must be registered before /api/events)
+app.use("/api/events/ticket", apiLimiter, eventsTicketRoutes);
 // SSE - no rate limit, long-lived connections
 app.use("/api/events", eventsRoutes);
 
@@ -291,7 +305,7 @@ app.listen(config.port, "0.0.0.0", async () => {
     const { createBullBoard } = await import("@bull-board/api");
     const { BullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
     const { ExpressAdapter } = await import("@bull-board/express");
-    const { scanQueue, discoverQueue } = await import(
+    const { scanQueue, discoverQueue, importQueue } = await import(
         "./workers/queues"
     );
     const { artistQueue, trackQueue, vibeQueue, podcastQueue } = await import(
@@ -305,6 +319,7 @@ app.listen(config.port, "0.0.0.0", async () => {
         queues: [
             new BullMQAdapter(scanQueue),
             new BullMQAdapter(discoverQueue),
+            new BullMQAdapter(importQueue),
             new BullMQAdapter(artistQueue),
             new BullMQAdapter(trackQueue),
             new BullMQAdapter(vibeQueue),

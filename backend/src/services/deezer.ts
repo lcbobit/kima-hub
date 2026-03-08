@@ -272,6 +272,21 @@ class DeezerService {
     }
 
     /**
+     * Fetch only the playlist title (lightweight, no track data).
+     */
+    async getPlaylistName(playlistId: string): Promise<string | null> {
+        try {
+            const resp = await axios.get(`${DEEZER_API}/playlist/${playlistId}`, {
+                timeout: 5000,
+                params: { limit: 1 },
+            });
+            return resp.data?.title || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Fetch a playlist by ID, paginating through all tracks if the playlist exceeds one page.
      */
     async getPlaylist(

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Play, Heart, Music } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/utils/cn";
@@ -23,6 +24,7 @@ export function TrackList({
     onTogglePlay,
     onLike,
 }: TrackListProps) {
+    const lastTapRef = useRef<{ time: number; index: number }>({ time: 0, index: -1 });
 
     return (
         <div className="w-full">
@@ -42,6 +44,7 @@ export function TrackList({
                     return (
                         <div
                             key={track.id}
+                            data-track-index={index}
                             onDoubleClick={() => {
                                 if (isTrackPlaying && isPlaying) {
                                     onTogglePlay();
@@ -49,8 +52,23 @@ export function TrackList({
                                     onPlayTrack(index);
                                 }
                             }}
+                            onTouchEnd={(e) => {
+                                const idx = Number(e.currentTarget.dataset.trackIndex);
+                                if (isNaN(idx)) return;
+                                const now = Date.now();
+                                if (now - lastTapRef.current.time < 300 && lastTapRef.current.index === idx) {
+                                    if (isTrackPlaying && isPlaying) {
+                                        onTogglePlay();
+                                    } else {
+                                        onPlayTrack(idx);
+                                    }
+                                    lastTapRef.current = { time: 0, index: -1 };
+                                } else {
+                                    lastTapRef.current = { time: now, index: idx };
+                                }
+                            }}
                             className={cn(
-                                "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,2fr)_80px_80px] gap-4 px-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer",
+                                "grid grid-cols-[40px_1fr_auto] md:grid-cols-[40px_minmax(200px,4fr)_minmax(100px,2fr)_80px_80px] gap-4 px-4 py-2 rounded-md hover:bg-white/5 transition-colors group cursor-pointer touch-manipulation",
                                 isTrackPlaying && "bg-white/10"
                             )}
                         >

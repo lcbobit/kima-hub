@@ -425,28 +425,6 @@ export async function cleanupExpiredCache(): Promise<{ deleted: number; freedMb:
     return { deleted, freedMb };
 }
 
-/**
- * Get cache statistics
- */
-export async function getCacheStats(): Promise<{
-    totalFiles: number;
-    totalSizeMb: number;
-    oldestFile: Date | null;
-}> {
-    const downloads = await prisma.podcastDownload.findMany({
-        select: {
-            fileSizeMb: true,
-            downloadedAt: true
-        },
-        orderBy: { downloadedAt: 'asc' }
-    });
-    
-    return {
-        totalFiles: downloads.length,
-        totalSizeMb: downloads.reduce((sum, d) => sum + d.fileSizeMb, 0),
-        oldestFile: downloads.length > 0 ? downloads[0].downloadedAt : null
-    };
-}
 
 /**
  * Check if an episode is currently being downloaded

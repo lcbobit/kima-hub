@@ -251,17 +251,3 @@ export async function organizeSingles(): Promise<void> {
     sessionLog('ORGANIZE', '=== ORGANIZATION COMPLETE ===');
 }
 
-/**
- * Queue organization task
- * With direct soulseek-ts, this is a simple one-shot task
- */
-export async function queueOrganizeSingles(): Promise<void> {
-    logger.debug("[ORGANIZE] Running organization task...");
-
-    try {
-        await organizeSingles();
-        logger.debug("[ORGANIZE] Organization complete");
-    } catch (err: any) {
-        logger.error("[ORGANIZE] Organization failed:", err.message);
-    }
-}

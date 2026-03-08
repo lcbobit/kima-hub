@@ -68,66 +68,6 @@ export class AppError extends Error {
     }
 }
 
-/**
- * Check if an error is recoverable
- */
-export function isRecoverable(error: any): boolean {
-    if (error instanceof AppError) {
-        return error.category === ErrorCategory.RECOVERABLE;
-    }
-    return false;
-}
-
-/**
- * Check if an error is transient
- */
-export function isTransient(error: any): boolean {
-    if (error instanceof AppError) {
-        return error.category === ErrorCategory.TRANSIENT;
-    }
-    return false;
-}
-
-/**
- * Wrap a Node.js error in an AppError
- */
-export function wrapNodeError(err: any, context: string): AppError {
-    if (err.code === "ENOENT") {
-        return new AppError(
-            ErrorCode.FILE_NOT_FOUND,
-            ErrorCategory.RECOVERABLE,
-            `File not found: ${context}`,
-            { originalError: err.message }
-        );
-    }
-
-    if (err.code === "EACCES" || err.code === "EPERM") {
-        return new AppError(
-            ErrorCode.PERMISSION_DENIED,
-            ErrorCategory.FATAL,
-            `Permission denied: ${context}`,
-            { originalError: err.message }
-        );
-    }
-
-    if (err.code === "ENOSPC") {
-        return new AppError(
-            ErrorCode.DISK_FULL,
-            ErrorCategory.TRANSIENT,
-            `Disk full: ${context}`,
-            { originalError: err.message }
-        );
-    }
-
-    // Generic file read error
-    return new AppError(
-        ErrorCode.FILE_READ_ERROR,
-        ErrorCategory.RECOVERABLE,
-        `Failed to read file: ${context}`,
-        { originalError: err.message }
-    );
-}
-
 export class UserFacingError extends Error {
   constructor(
     message: string,
@@ -170,3 +110,4 @@ export class RateLimitError extends Error {
     Object.setPrototypeOf(this, RateLimitError.prototype);
   }
 }
+

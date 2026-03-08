@@ -14,7 +14,7 @@ test.describe("Playback", () => {
     });
 
     test("album page accessible and shows tracks", async ({ page }) => {
-        await page.goto("/library?tab=albums");
+        await page.goto("/collection?tab=albums");
 
         // Wait for albums to load
         const firstAlbum = page.locator('a[href^="/album/"]').first();

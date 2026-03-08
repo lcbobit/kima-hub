@@ -7,11 +7,11 @@ import { cn } from "@/utils/cn";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 
 const navigationItems = [
-    { 
-        name: "Library", 
-        href: "/library", 
+    {
+        name: "Collection",
+        href: "/collection",
         icon: Library,
-        matchPattern: "/library"
+        matchPattern: "/collection"
     },
     { 
         name: "Audiobooks", 

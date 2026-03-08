@@ -59,13 +59,4 @@ export const imageLimiter = rateLimit({
     ...trustProxyValidation,
 });
 
-// Download limiter (100 req/minute)
-// Users might download entire discographies, so this needs to be reasonable
-export const downloadLimiter = rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 100,
-    message: "Too many download requests, please try again later.",
-    standardHeaders: true,
-    legacyHeaders: false,
-    ...trustProxyValidation,
-});
+

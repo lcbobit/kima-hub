@@ -82,9 +82,9 @@ export const config = {
               }
             : undefined,
 
-    // Last.fm - ships with default app key, user can optionally override
+    // Last.fm
     lastfm: {
-        apiKey: process.env.LASTFM_API_KEY || "95fe0eaa9875db7bb8539b2c738b4dcd",
+        apiKey: process.env.LASTFM_API_KEY || "c1797de6bf0b7e401b623118120cd9e1",
     },
 
     // OpenAI - reads from database

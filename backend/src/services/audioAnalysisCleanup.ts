@@ -161,7 +161,7 @@ class AudioAnalysisCleanupService {
                 await prisma.track.update({
                     where: { id: track.id },
                     data: {
-                        analysisStatus: "failed",
+                        analysisStatus: "permanently_failed",
                         analysisError: `Exceeded ${MAX_RETRIES} retry attempts (stale processing)`,
                         analysisRetryCount: newRetryCount,
                         analysisStartedAt: null,
@@ -225,15 +225,17 @@ class AudioAnalysisCleanupService {
         processing: number;
         completed: number;
         failed: number;
+        permanentlyFailed: number;
         circuitOpen: boolean;
         circuitState: CircuitState;
         failureCount: number;
     }> {
-        const [pending, processing, completed, failed] = await Promise.all([
+        const [pending, processing, completed, failed, permanentlyFailed] = await Promise.all([
             prisma.track.count({ where: { analysisStatus: "pending" } }),
             prisma.track.count({ where: { analysisStatus: "processing" } }),
             prisma.track.count({ where: { analysisStatus: "completed" } }),
             prisma.track.count({ where: { analysisStatus: "failed" } }),
+            prisma.track.count({ where: { analysisStatus: "permanently_failed" } }),
         ]);
 
         return {
@@ -241,6 +243,7 @@ class AudioAnalysisCleanupService {
             processing,
             completed,
             failed,
+            permanentlyFailed,
             circuitOpen: this.state === "open",
             circuitState: this.state,
             failureCount: this.failureCount,

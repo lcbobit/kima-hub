@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
  * directly to the client, bypassing the rewrite proxy entirely.
  */
 export async function GET(request: NextRequest) {
-    const token = request.nextUrl.searchParams.get("token");
-    if (!token) {
+    const ticket = request.nextUrl.searchParams.get("ticket");
+    if (!ticket) {
         return new Response("Unauthorized", { status: 401 });
     }
 
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     let backendResponse: Response;
     try {
         backendResponse = await fetch(
-            `${backendUrl}/api/events?token=${encodeURIComponent(token)}`,
+            `${backendUrl}/api/events?ticket=${encodeURIComponent(ticket)}`,
             {
                 headers: {
                     Accept: "text/event-stream",

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Montserrat } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { FeaturesProvider } from "@/lib/features-context";
@@ -13,11 +13,11 @@ import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistratio
 import { GlobalErrorBoundary } from "@/components/providers/GlobalErrorBoundary";
 import { ActivityPanelSettingsProvider } from "@/lib/activity-panel-settings-context";
 
-const montserrat = Montserrat({
-    weight: ["300", "400", "500", "600", "700", "800"],
-    subsets: ["latin"],
-    display: "swap",
+const montserrat = localFont({
+    src: "../public/fonts/montserrat-latin.woff2",
     variable: "--font-montserrat",
+    display: "swap",
+    weight: "300 800",
 });
 
 // Viewport configuration - separate export for Next.js 14+
@@ -32,7 +32,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
     title: "Kima - Your Music",
-    description: "Self-hosted music streaming platform",
+    description: "Self-hosted music streaming platform. https://github.com/Chevron7Locked/kima-hub",
     manifest: "/manifest.webmanifest",
     icons: {
         apple: [
@@ -43,6 +43,13 @@ export const metadata: Metadata = {
         capable: true,
         statusBarStyle: "black-translucent",
         title: "Kima",
+    },
+    openGraph: {
+        title: "Kima",
+        description: "Self-hosted music streaming platform",
+        siteName: "Kima",
+        url: "https://github.com/Chevron7Locked/kima-hub",
+        type: "website",
     },
 };
 

@@ -6,10 +6,12 @@ import { useActiveDownloads } from "@/hooks/useNotifications";
 import { NotificationsTab } from "@/components/activity/NotificationsTab";
 import { ActiveDownloadsTab } from "@/components/activity/ActiveDownloadsTab";
 import { HistoryTab } from "@/components/activity/HistoryTab";
+import { ImportsTab } from "@/components/activity/ImportsTab";
 import {
     Bell,
     Download,
     History,
+    ListMusic,
     ChevronLeft,
     ChevronRight,
     X,
@@ -18,11 +20,12 @@ import { cn } from "@/utils/cn";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { useActivityPanelSettings } from "@/lib/activity-panel-settings-context";
 
-type ActivityTab = "notifications" | "active" | "history" | "settings";
+type ActivityTab = "notifications" | "active" | "imports" | "history" | "settings";
 
 const TABS: { id: ActivityTab; label: string; icon: React.ElementType }[] = [
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "active", label: "Active", icon: Download },
+    { id: "imports", label: "Imports", icon: ListMusic },
     { id: "history", label: "History", icon: History },
 ];
 
@@ -150,6 +153,7 @@ export function ActivityPanel({
                         {resolvedActiveTab === "active" && (
                             <ActiveDownloadsTab />
                         )}
+                        {resolvedActiveTab === "imports" && <ImportsTab />}
                         {resolvedActiveTab === "history" && <HistoryTab />}
                         {resolvedActiveTab === "settings" && settingsContent}
                     </div>
@@ -253,6 +257,7 @@ export function ActivityPanel({
                         <NotificationsTab />
                     )}
                     {resolvedActiveTab === "active" && <ActiveDownloadsTab />}
+                    {resolvedActiveTab === "imports" && <ImportsTab />}
                     {resolvedActiveTab === "history" && <HistoryTab />}
                     {resolvedActiveTab === "settings" && settingsContent}
                 </div>

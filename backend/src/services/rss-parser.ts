@@ -1,4 +1,5 @@
 import Parser from "rss-parser";
+import axios from "axios";
 import { logger } from "../utils/logger";
 
 interface RSSPodcast {
@@ -30,6 +31,23 @@ interface ParsedPodcastFeed {
     episodes: RSSEpisode[];
 }
 
+export interface FeedFetchOptions {
+    etag?: string | null;
+    lastModified?: string | null;
+}
+
+export interface FeedFetchResult extends ParsedPodcastFeed {
+    notModified: false;
+    etag?: string;
+    lastModified?: string;
+}
+
+export interface FeedNotModifiedResult {
+    notModified: true;
+}
+
+export type ParseFeedResult = FeedFetchResult | FeedNotModifiedResult;
+
 class RSSParserService {
     private parser: Parser;
 
@@ -55,12 +73,42 @@ class RSSParserService {
     }
 
     /**
-     * Parse an RSS podcast feed from a URL
+     * Parse an RSS podcast feed from a URL with optional conditional GET support.
+     * When etag/lastModified options are provided, sends If-None-Match / If-Modified-Since
+     * headers. Returns { notModified: true } on 304.
      */
-    async parseFeed(feedUrl: string): Promise<ParsedPodcastFeed> {
+    async parseFeed(feedUrl: string, options?: FeedFetchOptions): Promise<ParseFeedResult> {
         try {
             logger.debug(`\n [RSS PARSER] Fetching feed: ${feedUrl}`);
-            const feed = await this.parser.parseURL(feedUrl);
+
+            const headers: Record<string, string> = {
+                "User-Agent": "Kima/1.6.2 (+https://github.com/Chevron7Locked/kima-hub; podcast aggregator)",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+                "Accept-Encoding": "gzip, deflate",
+            };
+
+            if (options?.etag) {
+                headers["If-None-Match"] = options.etag;
+            }
+            if (options?.lastModified) {
+                headers["If-Modified-Since"] = options.lastModified;
+            }
+
+            const response = await axios.get(feedUrl, {
+                headers,
+                timeout: 30000,
+                maxRedirects: 5,
+                validateStatus: (status) => status < 400 || status === 304,
+                responseType: "text",
+            });
+
+            if (response.status === 304) {
+                logger.debug(`   Feed not modified (304)`);
+                return { notModified: true };
+            }
+
+            const xml = typeof response.data === "string" ? response.data : String(response.data);
+            const feed = await this.parser.parseString(xml);
 
             // Extract podcast metadata
             const podcast: RSSPodcast = {
@@ -133,7 +181,13 @@ class RSSParserService {
 
             logger.debug(`   Successfully parsed ${episodes.length} episodes`);
 
-            return { podcast, episodes };
+            return {
+                notModified: false,
+                podcast,
+                episodes,
+                etag: response.headers["etag"] || undefined,
+                lastModified: response.headers["last-modified"] || undefined,
+            };
         } catch (error: any) {
             logger.error(
                 `\n [RSS PARSER] Failed to parse feed:`,

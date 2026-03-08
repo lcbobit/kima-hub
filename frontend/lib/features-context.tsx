@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useMemo, ReactNode } from "react";
 import { api } from "./api";
+import { useAuth } from "./auth-context";
 
 interface FeaturesState {
     musicCNN: boolean;
@@ -18,9 +19,12 @@ const defaultState: FeaturesState = {
 const FeaturesContext = createContext<FeaturesState | undefined>(undefined);
 
 export function FeaturesProvider({ children }: { children: ReactNode }) {
+    const { isAuthenticated } = useAuth();
     const [state, setState] = useState<FeaturesState>(defaultState);
 
     useEffect(() => {
+        if (!isAuthenticated) return;
+
         const fetchFeatures = () => {
             api.getFeatures()
                 .then((features) => {
@@ -39,7 +43,7 @@ export function FeaturesProvider({ children }: { children: ReactNode }) {
         fetchFeatures();
         const interval = setInterval(fetchFeatures, 60000);
         return () => clearInterval(interval);
-    }, []);
+    }, [isAuthenticated]);
 
     const value = useMemo(() => state, [state]);
 

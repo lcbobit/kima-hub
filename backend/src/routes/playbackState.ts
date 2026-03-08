@@ -58,7 +58,7 @@ router.post("/", requireAuth, async (req, res) => {
             // Filter out any invalid items first
             try {
                 safeQueue = queue
-                    .slice(0, 100)
+                    .slice(0, 2000)
                     .filter((item: any) => item && item.id) // Must have at least an ID
                     .map((item: any) => ({
                         id: String(item.id || ""),

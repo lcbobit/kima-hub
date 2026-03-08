@@ -140,10 +140,6 @@ export function MiniPlayer() {
     // Check if controls should be enabled (only for tracks)
     const canSkip = playbackType === "track";
 
-    // Handle progress bar seek
-    const handleSeek = (time: number) => {
-        seek(time);
-    };
 
     if (isMobileOrTablet) {
         // Don't render if no media
@@ -492,7 +488,7 @@ export function MiniPlayer() {
                 <SeekSlider
                     progress={progress}
                     duration={duration}
-                    onSeek={handleSeek}
+                    onSeek={seek}
                     canSeek={canSeek}
                     hasMedia={hasMedia}
                     downloadProgress={downloadProgress}

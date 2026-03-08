@@ -151,6 +151,7 @@ export interface ScanJobResult {
     tracksAdded: number;
     tracksUpdated: number;
     tracksRemoved: number;
+    tracksCorrupt: number;
     errors: Array<{ file: string; error: string }>;
     duration: number;
 }
@@ -192,7 +193,7 @@ export async function processScan(
     );
 
     // Create scanner with progress callback and cover cache path
-    let lastEmittedPercent = -2;
+    let lastEmittedPercent = -1;
     const scanner = new MusicScannerService((progress) => {
         const percent = Math.floor(
             (progress.filesScanned / progress.filesTotal) * 100
@@ -200,8 +201,8 @@ export async function processScan(
         job.updateProgress(percent).catch((err) =>
             logger.error(`Failed to update job progress:`, err)
         );
-        // Emit SSE every 2% to avoid flooding
-        if (userId && percent >= lastEmittedPercent + 2) {
+        // Emit SSE every 1% for smooth progress
+        if (userId && percent >= lastEmittedPercent + 1) {
             lastEmittedPercent = percent;
             eventBus.emit({
                 type: "scan:progress",
@@ -227,13 +228,13 @@ export async function processScan(
                 userId,
                 payload: {
                     jobId: String(job.id),
-                    result: { tracksAdded: result.tracksAdded, tracksUpdated: result.tracksUpdated, tracksRemoved: result.tracksRemoved },
+                    result: { tracksAdded: result.tracksAdded, tracksUpdated: result.tracksUpdated, tracksRemoved: result.tracksRemoved, tracksCorrupt: result.tracksCorrupt },
                 },
             });
         }
 
         logger.debug(
-            `[ScanJob ${job.id}] Scan complete: +${result.tracksAdded} ~${result.tracksUpdated} -${result.tracksRemoved}`
+            `[ScanJob ${job.id}] Scan complete: +${result.tracksAdded} ~${result.tracksUpdated} -${result.tracksRemoved} corrupt:${result.tracksCorrupt}`
         );
 
         // If this scan was triggered by a download completion, mark download jobs as completed
@@ -478,7 +479,7 @@ export async function processScan(
                 await notificationService.notifySystem(
                     userId,
                     "Library Scan Complete",
-                    `Added ${result.tracksAdded} tracks, updated ${result.tracksUpdated}, removed ${result.tracksRemoved}`
+                    `Added ${result.tracksAdded} tracks, updated ${result.tracksUpdated}, removed ${result.tracksRemoved}${result.tracksCorrupt > 0 ? `, ${result.tracksCorrupt} corrupt` : ""}`
                 );
             } catch (error) {
                 logger.error(

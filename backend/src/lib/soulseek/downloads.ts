@@ -30,15 +30,11 @@ export type RequestedDownload = {
   events: SlskDownloadEventEmitter
   requestQueuePosition: () => void
 }
-export const isRequestedDownload = (download: Download): download is RequestedDownload =>
-  download.status === 'requested'
 
 export type QueuedDownload = Omit<RequestedDownload, 'status'> & {
   status: 'queued'
   queuePosition: number
 }
-export const isQueuedDownload = (download: Download): download is QueuedDownload =>
-  download.status === 'queued'
 
 export type ConnectedDownload = Omit<QueuedDownload, 'status'> & {
   status: 'connected'
@@ -64,8 +60,6 @@ export type DeniedDownload = Omit<RequestedDownload, 'status'> & {
   status: 'denied'
   reason: string
 }
-export const isDeniedDownload = (download: Download): download is DeniedDownload =>
-  download.status === 'denied'
 
 export type DownloadWithToken = ConnectedDownload | DownloadingDownload | CompleteDownload
 export const downloadHasToken = (download: Download): download is DownloadWithToken =>

@@ -1,56 +1,27 @@
 import { Router, Request, Response } from "express";
-import jwt from "jsonwebtoken";
 import { eventBus, SSEEvent } from "../services/eventBus";
 import { logger } from "../utils/logger";
-import { prisma } from "../utils/db";
+import { redisClient } from "../utils/redis";
 
 const router = Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET;
 
 const connections = new Map<string, Set<Response>>();
 
 /**
- * GET /api/events?token=<jwt>
+ * GET /api/events?ticket=<uuid>
  * SSE endpoint for real-time event streaming.
- * Auth via query param because EventSource API cannot set headers.
+ * Auth via short-lived, one-time-use ticket obtained from POST /api/events/ticket.
  */
 router.get("/", async (req: Request, res: Response) => {
-  const token = req.query.token as string | undefined;
-  if (!token || !JWT_SECRET) {
+  const ticket = req.query.ticket as string | undefined;
+  if (!ticket) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
 
-  let userId: string;
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as {
-      userId: string;
-      tokenVersion?: number;
-    };
-
-    // Validate tokenVersion against database (same as authenticateRequest in middleware/auth.ts)
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: { id: true, tokenVersion: true },
-    });
-
-    if (!user) {
-      res.status(401).json({ error: "User not found" });
-      return;
-    }
-
-    if (
-      decoded.tokenVersion === undefined ||
-      decoded.tokenVersion !== user.tokenVersion
-    ) {
-      res.status(401).json({ error: "Token has been revoked" });
-      return;
-    }
-
-    userId = decoded.userId;
-  } catch {
-    res.status(401).json({ error: "Invalid token" });
+  const userId = await redisClient.getDel(`sse:ticket:${ticket}`);
+  if (!userId) {
+    res.status(401).json({ error: "Invalid or expired ticket" });
     return;
   }
 

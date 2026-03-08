@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { SettingsSection, SettingsRow, SettingsToggle } from "../ui";
 import { SystemSettings } from "../../types";
 import { api } from "@/lib/api";
-import { enrichmentApi } from "@/lib/enrichmentApi";
+import { enrichmentApi, type EnrichmentFailure } from "@/lib/enrichmentApi";
 import { useFeatures } from "@/lib/features-context";
 import {
     useQueryClient,
@@ -23,8 +23,8 @@ import {
     StopCircle,
     AlertTriangle,
     Waves,
+    ChevronDown,
 } from "lucide-react";
-import { EnrichmentFailuresModal } from "@/components/EnrichmentFailuresModal";
 
 interface CacheSectionProps {
     settings: SystemSettings;
@@ -66,6 +66,8 @@ function EnrichmentStage({
     progress,
     isBackground = false,
     failed = 0,
+    permanentlyFailed = 0,
+    queued = 0,
     processing = 0,
 }: {
     icon: React.ElementType;
@@ -76,6 +78,8 @@ function EnrichmentStage({
     progress: number;
     isBackground?: boolean;
     failed?: number;
+    permanentlyFailed?: number;
+    queued?: number;
     processing?: number;
 }) {
     const isComplete = progress === 100;
@@ -124,6 +128,11 @@ function EnrichmentStage({
                     <span>
                         {completed} / {total}
                     </span>
+                    {queued > 0 && (
+                        <span className="text-blue-400">
+                            {queued} queued
+                        </span>
+                    )}
                     {processing > 0 && (
                         <span className="text-[#fca208]">
                             {processing} processing
@@ -131,6 +140,9 @@ function EnrichmentStage({
                     )}
                     {failed > 0 && (
                         <span className="text-red-400">{failed} failed</span>
+                    )}
+                    {permanentlyFailed > 0 && (
+                        <span className="text-red-400/60">{permanentlyFailed} permanently failed</span>
                     )}
                 </div>
             </div>
@@ -147,6 +159,31 @@ const sliderClass = `w-32 h-1.5 bg-white/5 rounded-lg appearance-none cursor-poi
 
 const secondaryBtnClass = `px-4 py-1.5 text-xs font-mono bg-white/5 border border-white/10 text-white/70 rounded-lg uppercase tracking-wider
     hover:bg-white/10 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-all w-fit`;
+
+function EnrichmentFailuresList() {
+    const { data, isLoading } = useQuery({
+        queryKey: ["enrichment-failures-inline"],
+        queryFn: () => enrichmentApi.getFailures({ limit: 50 }),
+        refetchInterval: 15000,
+    });
+
+    if (isLoading) return <div className="py-2 text-xs font-mono text-white/20 uppercase tracking-wider">Loading...</div>;
+    if (!data?.failures?.length) return <div className="py-2 text-xs font-mono text-white/20 uppercase tracking-wider">No active failures</div>;
+
+    return (
+        <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+            {data.failures.map((f: EnrichmentFailure) => (
+                <div key={f.id} className="flex items-center justify-between py-1 px-2 bg-white/[0.02] rounded text-xs font-mono">
+                    <div className="flex-1 min-w-0">
+                        <span className="text-white/60 truncate block">{f.entityName || f.entityId}</span>
+                        <span className="text-red-400/50 text-[10px]">{f.errorMessage || "Unknown error"}</span>
+                    </div>
+                    <span className="text-white/20 text-[10px] ml-2 shrink-0">{f.errorCode}</span>
+                </div>
+            ))}
+        </div>
+    );
+}
 
 export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
     const { musicCNN, vibeEmbeddings, loading: featuresLoading } = useFeatures();
@@ -170,13 +207,13 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
         };
     } | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [showFailuresModal, setShowFailuresModal] = useState(false);
+    const [showInlineFailures, setShowInlineFailures] = useState(false);
     const queryClient = useQueryClient();
     const syncStartTimeRef = useRef<number>(0);
 
     useEffect(() => {
         if (window.location.hash === "#enrichment-failures") {
-            setShowFailuresModal(true);
+            setShowInlineFailures(true);
         }
     }, []);
 
@@ -624,7 +661,9 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                                             processing={
                                                 enrichmentProgress.audioAnalysis.processing
                                             }
+                                            queued={enrichmentProgress.audioAnalysis.queued}
                                             failed={enrichmentProgress.audioAnalysis.failed}
+                                            permanentlyFailed={enrichmentProgress.audioAnalysis.permanentlyFailed}
                                             isBackground={true}
                                         />
                                     </div>
@@ -740,17 +779,21 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                                 </>
                             )}
 
-                            {totalFailures > 0 && (
+                        </div>
+
+                        {totalFailures > 0 && (
+                            <div className="mt-4 pt-3 border-t border-white/10">
                                 <button
-                                    onClick={() => setShowFailuresModal(true)}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-mono bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg uppercase tracking-wider
-                                    hover:bg-red-500/20 transition-colors ml-auto"
+                                    onClick={() => setShowInlineFailures(!showInlineFailures)}
+                                    className="flex items-center gap-2 text-xs font-mono text-red-400/70 uppercase tracking-wider hover:text-red-400 transition-colors"
                                 >
                                     <AlertTriangle className="w-3 h-3" />
-                                    View Failures ({totalFailures})
+                                    {showInlineFailures ? "Hide" : "Show"} Failures ({totalFailures})
+                                    <ChevronDown className={`w-3 h-3 transition-transform ${showInlineFailures ? "rotate-180" : ""}`} />
                                 </button>
-                            )}
-                        </div>
+                                {showInlineFailures && <EnrichmentFailuresList />}
+                            </div>
+                        )}
 
                         {/* Status Message */}
                         {enrichmentState &&
@@ -1046,7 +1089,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                             ? "Cleaning..."
                             : "Cleanup Stale Jobs"}
                     </button>
-                    {enrichmentProgress?.audioAnalysis?.failed > 0 && (
+                    {(enrichmentProgress?.audioAnalysis?.failed > 0 || enrichmentProgress?.audioAnalysis?.permanentlyFailed > 0) && (
                         <button
                             onClick={handleRetryFailedAnalysis}
                             disabled={retryingFailed || isEnrichmentActive}
@@ -1054,7 +1097,7 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                         >
                             {retryingFailed
                                 ? "Retrying..."
-                                : `Retry Failed Analysis (${enrichmentProgress.audioAnalysis.failed})`}
+                                : `Retry Failed Analysis (${(enrichmentProgress.audioAnalysis.failed || 0) + (enrichmentProgress.audioAnalysis.permanentlyFailed || 0)})`}
                         </button>
                     )}
                     {retryResult && (
@@ -1083,10 +1126,6 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
                 </div>
             </SettingsSection>
 
-            <EnrichmentFailuresModal
-                isOpen={showFailuresModal}
-                onClose={() => setShowFailuresModal(false)}
-            />
         </>
     );
 }

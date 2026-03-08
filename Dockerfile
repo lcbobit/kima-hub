@@ -65,6 +65,7 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     'python-dotenv>=1.0.0' \
     'requests>=2.31.0' \
     'bullmq==2.19.5' \
+    'yt-dlp>=2024.12.0' \
     && pip cache purge \
     && find /usr -name "*.pyc" -delete \
     && find /usr -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
@@ -90,10 +91,14 @@ RUN echo "Downloading ML models..." && \
         "https://essentia.upf.edu/models/classification-heads/mood_electronic/mood_electronic-msd-musicnn-1.pb" && \
     curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /app/models/danceability-msd-musicnn-1.pb \
         "https://essentia.upf.edu/models/classification-heads/danceability/danceability-msd-musicnn-1.pb" && \
-    curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /app/models/voice_instrumental-msd-musicnn-1.pb \
-        "https://essentia.upf.edu/models/classification-heads/voice_instrumental/voice_instrumental-msd-musicnn-1.pb" && \
-    curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /app/models/music_audioset_epoch_15_esc_90.14.pt \
+    curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /app/models/deam-msd-musicnn-2.pb \
+        "https://essentia.upf.edu/models/classification-heads/deam/deam-msd-musicnn-2.pb" && \
+    curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 300 -o /app/models/emomusic-msd-musicnn-2.pb \
+        "https://essentia.upf.edu/models/classification-heads/emomusic/emomusic-msd-musicnn-2.pb" && \
+    curl -L --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 600 -o /tmp/clap_full.pt \
         "https://huggingface.co/lukewys/laion_clap/resolve/main/music_audioset_epoch_15_esc_90.14.pt" && \
+    python3 -c "import torch; ckpt = torch.load('/tmp/clap_full.pt', map_location='cpu', weights_only=False); torch.save({'state_dict': ckpt['state_dict']}, '/app/models/music_audioset_epoch_15_esc_90.14.pt')" && \
+    rm /tmp/clap_full.pt && \
     echo "All ML models downloaded" && \
     ls -lh /app/models/
 
@@ -114,7 +119,24 @@ RUN cat > /app/wait-for-db.sh << 'EOF'
 TIMEOUT=${1:-120}
 COUNTER=0
 
-echo "[wait-for-db] Waiting for database schema (timeout: ${TIMEOUT}s)..."
+echo "[wait-for-db] Waiting for Redis and database schema (timeout: ${TIMEOUT}s)..."
+
+# Wait for Redis to finish loading
+echo "[wait-for-db] Checking Redis readiness..."
+REDIS_COUNTER=0
+while [ $REDIS_COUNTER -lt $TIMEOUT ]; do
+    if redis-cli -h localhost ping 2>/dev/null | grep -q PONG; then
+        echo "[wait-for-db] ✓ Redis is ready!"
+        break
+    fi
+    sleep 1
+    REDIS_COUNTER=$((REDIS_COUNTER + 1))
+done
+
+if [ $REDIS_COUNTER -ge $TIMEOUT ]; then
+    echo "[wait-for-db] ERROR: Redis not ready after ${TIMEOUT}s"
+    exit 1
+fi
 
 # Quick check for schema ready flag
 if [ -f /data/.schema_ready ]; then
@@ -239,7 +261,7 @@ priority=20
 [program:backend]
 command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/backend && node dist/index.js"
 autostart=true
-autorestart=unexpected
+autorestart=true
 startretries=3
 startsecs=10
 stdout_logfile=/dev/stdout
@@ -263,7 +285,7 @@ priority=40
 [program:audio-analyzer]
 command=/bin/bash -c "/app/wait-for-db.sh 120 && cd /app/audio-analyzer && python3 analyzer.py"
 autostart=true
-autorestart=unexpected
+autorestart=true
 startretries=3
 startsecs=10
 stdout_logfile=/dev/stdout

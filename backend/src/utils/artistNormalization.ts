@@ -9,7 +9,7 @@ import * as fuzz from "fuzzball";
  * Canonical name and MBID for compilation/various artists
  */
 export const VARIOUS_ARTISTS_CANONICAL = "Various Artists";
-export const VARIOUS_ARTISTS_MBID = "89ad4ac3-39f7-470e-963a-56509c546377";
+
 
 /**
  * Check if an artist name is a variation of "Various Artists"
@@ -85,15 +85,6 @@ export function collapseForComparison(normalizedName: string): string {
     return normalizedName.replace(/\s+/g, '');
 }
 
-/**
- * Normalize an album title for case-insensitive comparison
- * - Converts to lowercase
- * - Trims whitespace
- */
-export function normalizeAlbumTitle(title: string): string {
-    if (title == null) return "";
-    return title.trim().toLowerCase();
-}
 
 /**
  * Strip edition/version suffixes from album titles for better search matching

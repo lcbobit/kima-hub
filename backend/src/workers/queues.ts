@@ -32,6 +32,16 @@ export const discoverQueue = new Queue("discover-weekly-v2", {
     defaultJobOptions,
 });
 
-export const queues = [scanQueue, discoverQueue];
+export const importQueue = new Queue("playlist-import", {
+    connection: getConnectionOptions(),
+    defaultJobOptions: {
+        ...defaultJobOptions,
+        attempts: 1, // Import jobs should not auto-retry (downloads are not idempotent)
+        removeOnComplete: { count: 50, age: 86400 },
+        removeOnFail: { count: 50, age: 86400 },
+    },
+});
 
-logger.debug("BullMQ queues initialized (library-scan-v2, discover-weekly-v2)");
+export const queues = [scanQueue, discoverQueue, importQueue];
+
+logger.debug("BullMQ queues initialized (library-scan-v2, discover-weekly-v2, playlist-import)");

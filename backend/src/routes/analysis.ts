@@ -8,6 +8,7 @@ import { enrichmentFailureService } from "../services/enrichmentFailureService";
 import { eventBus } from "../services/eventBus";
 import { vibeQueue } from "../workers/enrichmentQueues";
 import { triggerEnrichmentNow } from "../workers/unifiedEnrichment";
+import { audioAnalysisCleanupService } from "../services/audioAnalysisCleanup";
 import os from "os";
 
 const router = Router();
@@ -27,11 +28,16 @@ router.get("/status", requireAuth, async (req, res) => {
             _count: true,
         });
 
-        const total = statusCounts.reduce((sum, s) => sum + s._count, 0);
+        const rawTotal = statusCounts.reduce((sum, s) => sum + s._count, 0);
         const completed = statusCounts.find(s => s.analysisStatus === "completed")?._count || 0;
         const failed = statusCounts.find(s => s.analysisStatus === "failed")?._count || 0;
         const processing = statusCounts.find(s => s.analysisStatus === "processing")?._count || 0;
         const pending = statusCounts.find(s => s.analysisStatus === "pending")?._count || 0;
+        const permanentlyFailed = statusCounts.find(s => s.analysisStatus === "permanently_failed")?._count || 0;
+
+        // Exclude permanently_failed and corrupt tracks from progress denominator
+        const corruptCount = await prisma.track.count({ where: { corrupt: true, analysisStatus: { not: "permanently_failed" } } });
+        const total = rawTotal - permanentlyFailed - corruptCount;
 
         // Get queue length from Redis
         const queueLength = await redisClient.lLen(ANALYSIS_QUEUE);
@@ -48,6 +54,7 @@ router.get("/status", requireAuth, async (req, res) => {
             total,
             completed,
             failed,
+            permanentlyFailed,
             processing,
             pending,
             queueLength,
@@ -124,11 +131,8 @@ router.post("/start", requireAuth, requireAdmin, async (req, res) => {
  */
 router.post("/retry-failed", requireAuth, requireAdmin, async (req, res) => {
     try {
-        // Reset failed tracks to pending
-        const result = await prisma.track.updateMany({
-            where: {
-                analysisStatus: "failed",
-            },
+        const failedResult = await prisma.track.updateMany({
+            where: { analysisStatus: "failed" },
             data: {
                 analysisStatus: "pending",
                 analysisError: null,
@@ -136,9 +140,35 @@ router.post("/retry-failed", requireAuth, requireAdmin, async (req, res) => {
             },
         });
 
+        const permFailedResult = await prisma.track.updateMany({
+            where: { analysisStatus: "permanently_failed" },
+            data: {
+                analysisStatus: "pending",
+                analysisError: null,
+                analysisRetryCount: 0,
+            },
+        });
+
+        // Mark related enrichment failures as resolved
+        await prisma.enrichmentFailure.updateMany({
+            where: {
+                entityType: "audio",
+                resolved: false,
+            },
+            data: {
+                resolved: true,
+                resolvedAt: new Date(),
+            },
+        });
+
+        audioAnalysisCleanupService.resetCircuitBreaker();
+
+        const totalReset = failedResult.count + permFailedResult.count;
         res.json({
-            message: `Reset ${result.count} failed tracks to pending`,
-            reset: result.count,
+            message: `Reset ${totalReset} failed tracks to pending`,
+            reset: totalReset,
+            failed: failedResult.count,
+            permanentlyFailed: permFailedResult.count,
         });
     } catch (error: any) {
         logger.error("Retry failed error:", error);
@@ -224,7 +254,6 @@ router.get("/track/:trackId", requireAuth, async (req, res) => {
                 arousal: true,
                 instrumentalness: true,
                 acousticness: true,
-                speechiness: true,
                 // MusiCNN mood predictions
                 moodHappy: true,
                 moodSad: true,

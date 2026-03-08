@@ -31,13 +31,19 @@ export function useEventSource() {
 
         let mounted = true;
 
-        const connect = () => {
+        const connect = async () => {
             if (!mounted) return;
 
-            const token = api.getToken();
-            if (!token) return;
+            const ticket = await api.getSSETicket();
+            if (!mounted) return;
+            if (!ticket) {
+                const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+                reconnectAttemptsRef.current++;
+                reconnectTimeoutRef.current = setTimeout(() => { connect().catch(() => {}); }, delay);
+                return;
+            }
 
-            const es = new EventSource(`${getSSEBaseUrl()}/api/events?token=${token}`);
+            const es = new EventSource(`${getSSEBaseUrl()}/api/events?ticket=${ticket}`);
             eventSourceRef.current = es;
 
             es.onmessage = (event) => {
@@ -114,9 +120,13 @@ export function useEventSource() {
                                 ["import-status", data.jobId],
                                 data
                             );
+                            queryClient.invalidateQueries({ queryKey: ["user-imports"] });
                             if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
                                 queryClient.invalidateQueries({ queryKey: ["notifications"] });
                                 queryClient.invalidateQueries({ queryKey: ["playlists"] });
+                                window.dispatchEvent(new CustomEvent("import-status-change", {
+                                    detail: { status: data.status, playlistName: data.playlistName, error: data.error }
+                                }));
                             }
                             break;
                         case "discover:progress":
@@ -173,7 +183,7 @@ export function useEventSource() {
                 if (mounted) {
                     const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
                     reconnectAttemptsRef.current++;
-                    reconnectTimeoutRef.current = setTimeout(connect, delay);
+                    reconnectTimeoutRef.current = setTimeout(() => { connect().catch(() => {}); }, delay);
                 }
             };
         };

@@ -147,16 +147,23 @@ export default function BrowsePlaylistsPage() {
         setIsParsing(true);
 
         try {
+            // Parse URL first to validate it
             const response = await api.post<{
                 source: string;
                 id: string;
                 url: string;
             }>("/browse/playlists/parse", { url: urlInput.trim() });
+
+            // Fire background import
+            await api.post<{ jobId: string }>("/spotify/import/quick", {
+                url: response.url,
+            });
+
             setShowUrlModal(false);
             setUrlInput("");
-            router.push(
-                `/import/spotify?url=${encodeURIComponent(response.url)}`,
-            );
+            window.dispatchEvent(new CustomEvent("import-status-change", {
+                detail: { status: "started", playlistName: null }
+            }));
         } catch (error: unknown) {
             const message =
                 error instanceof Error ? error.message : "Invalid playlist URL";
@@ -593,8 +600,21 @@ export default function BrowsePlaylistsPage() {
                                         Deezer
                                     </span>
                                 </div>
+                                <div className="flex items-center gap-2 px-2.5 py-1 bg-[#FF0000]/10 rounded border border-[#FF0000]/20">
+                                    <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-[#FF0000]" fill="currentColor">
+                                        <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                                    </svg>
+                                    <span className="text-[10px] font-black text-[#FF0000] uppercase tracking-wider">
+                                        YouTube
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-2 px-2.5 py-1 bg-[#FF5500]/10 rounded border border-[#FF5500]/20">
+                                    <span className="text-[10px] font-black text-[#FF5500] uppercase tracking-wider">
+                                        SC
+                                    </span>
+                                </div>
                                 <span className="text-[10px] font-mono text-white/20 ml-auto uppercase tracking-wider">
-                                    Supported
+                                    +more
                                 </span>
                             </div>
                         </div>
@@ -608,7 +628,7 @@ export default function BrowsePlaylistsPage() {
                                     onChange={(e) =>
                                         setUrlInput(e.target.value)
                                     }
-                                    placeholder="Paste playlist URL here..."
+                                    placeholder="Paste a playlist URL (Spotify, YouTube, SoundCloud...)"
                                     className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-[#a855f7]/40 transition-all font-mono"
                                     onKeyDown={(e) =>
                                         e.key === "Enter" && handleUrlSubmit()
@@ -625,8 +645,7 @@ export default function BrowsePlaylistsPage() {
                                 )}
                             </div>
                             <p className="text-[10px] font-mono text-white/20 mt-2 ml-1 uppercase tracking-wider">
-                                Example:
-                                https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+                                Spotify, Deezer, YouTube, SoundCloud, Bandcamp, Mixcloud
                             </p>
                         </div>
 

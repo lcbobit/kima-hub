@@ -668,6 +668,13 @@ class ApiClient {
         });
     }
 
+    async updatePlaylist(id: string, data: { name?: string; isPublic?: boolean }) {
+        return this.request<ApiData>(`/playlists/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(data),
+        });
+    }
+
     async deletePlaylist(id: string) {
         return this.request<void>(`/playlists/${id}`, {
             method: "DELETE",
@@ -898,6 +905,15 @@ class ApiClient {
             totalCount: number;
             unavailableCount: number;
         }>("/discover/current");
+    }
+
+    async getSSETicket(): Promise<string | null> {
+        try {
+            const res = await this.post<{ ticket: string }>("/events/ticket", {});
+            return res.ticket;
+        } catch {
+            return null;
+        }
     }
 
     async getDiscoverBatchStatus() {
@@ -1174,6 +1190,19 @@ class ApiClient {
         );
     }
 
+    async refreshPodcast(podcastId: string) {
+        return this.request<{ success: boolean; newEpisodesCount: number; totalEpisodes: number; message: string }>(
+            `/podcasts/${podcastId}/refresh`
+        );
+    }
+
+    async refreshAllPodcasts() {
+        return this.request<{ queued: number; total: number; message: string }>(
+            "/podcasts/refresh-all",
+            { method: "POST" }
+        );
+    }
+
     // Playback State (cross-device sync)
     async getPlaybackState() {
         return this.request<ApiData>("/playback-state");
@@ -1375,8 +1404,10 @@ class ApiClient {
                 total: number;
                 completed: number;
                 pending: number;
+                queued: number;
                 processing: number;
                 failed: number;
+                permanentlyFailed: number;
                 progress: number;
                 isBackground: boolean;
             };
@@ -1682,7 +1713,6 @@ class ApiClient {
             arousal: number | null;
             instrumentalness: number | null;
             acousticness: number | null;
-            speechiness: number | null;
             // MusiCNN mood predictions
             moodHappy: number | null;
             moodSad: number | null;
@@ -1701,6 +1731,68 @@ class ApiClient {
         id: string
     ): Promise<{ success: boolean; newJobId?: string }> {
         return this.post(`/notifications/downloads/${id}/retry`);
+    }
+
+    // Share Links
+    async createShareLink(
+        entityType: "playlist" | "track" | "album",
+        entityId: string
+    ): Promise<{ token: string; url: string; existing?: boolean }> {
+        return this.request<{ token: string; url: string; existing?: boolean }>("/share", {
+            method: "POST",
+            body: JSON.stringify({ entityType, entityId }),
+        });
+    }
+
+    async revokeShareLink(token: string): Promise<{ message: string }> {
+        return this.request<{ message: string }>(`/share/${token}`, {
+            method: "DELETE",
+        });
+    }
+
+    // M3U Import (uses raw fetch -- FormData requires browser-set Content-Type)
+    async importM3U(
+        file: File,
+        playlistName: string
+    ): Promise<{ playlistId: string; matched: number; unmatched: number; total: number }> {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("playlistName", playlistName);
+
+        const response = await fetch(`${this.getBaseUrl()}/api/spotify/import/m3u`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${this.getToken()}` },
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(
+                (error as Record<string, string>).error || "M3U import failed"
+            );
+        }
+
+        return response.json();
+    }
+    // Corrupt tracks
+    async getCorruptTracks() {
+        return this.request<{
+            count: number;
+            tracks: Array<{
+                id: string;
+                title: string;
+                artist: string;
+                album: string;
+                filePath: string;
+            }>;
+        }>("/library/corrupt-tracks");
+    }
+
+    async deleteCorruptTracks() {
+        return this.request<{ deleted: number; message: string }>(
+            "/library/corrupt-tracks",
+            { method: "DELETE" }
+        );
     }
 }
 

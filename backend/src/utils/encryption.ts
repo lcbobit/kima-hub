@@ -116,12 +116,5 @@ export function encryptField(value: string | null | undefined): string | null {
     return encrypt(value);
 }
 
-/**
- * Decrypt a field value, returning null for null values
- * Returns empty string for empty input
- */
-export function decryptField(value: string | null | undefined): string | null {
-    if (value === null || value === undefined) return null;
-    return decrypt(value);
-}
+
 

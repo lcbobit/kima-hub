@@ -421,32 +421,27 @@ export class EnrichmentService {
     ): Promise<void> {
         const updateData: any = {};
 
-        // Check if MBID is already in use by another artist
         if (data.mbid) {
-            const existingArtist = await prisma.artist.findUnique({
-                where: { mbid: data.mbid },
-                select: { id: true, name: true },
-            });
-
-            if (existingArtist && existingArtist.id !== artistId) {
-                logger.debug(
-                    `MBID ${data.mbid} already used by "${existingArtist.name}", skipping MBID update`
-                );
-            } else {
-                updateData.mbid = data.mbid;
-            }
+            updateData.mbid = data.mbid;
         }
 
         if (data.bio) updateData.summary = data.bio;
         if (data.heroUrl) {
-            // Download image locally if it's an external URL
             if (!isNativePath(data.heroUrl)) {
-                const localPath = await downloadAndStoreImage(
-                    data.heroUrl,
-                    artistId,
-                    "artist"
-                );
-                updateData.heroUrl = localPath || data.heroUrl;
+                const current = await prisma.artist.findUnique({
+                    where: { id: artistId },
+                    select: { heroUrl: true },
+                });
+                if (current?.heroUrl && isNativePath(current.heroUrl)) {
+                    // Keep existing local image, skip external URL
+                } else {
+                    const localPath = await downloadAndStoreImage(
+                        data.heroUrl,
+                        artistId,
+                        "artist"
+                    );
+                    updateData.heroUrl = localPath || data.heroUrl;
+                }
             } else {
                 updateData.heroUrl = data.heroUrl;
             }
@@ -456,13 +451,30 @@ export class EnrichmentService {
         }
 
         if (Object.keys(updateData).length > 0) {
-            await prisma.artist.update({
-                where: { id: artistId },
-                data: updateData,
-            });
-            logger.debug(
-                `   Saved ${data.genres?.length || 0} genres for artist`
-            );
+            try {
+                await prisma.artist.update({
+                    where: { id: artistId },
+                    data: updateData,
+                });
+                logger.debug(
+                    `   Saved ${data.genres?.length || 0} genres for artist`
+                );
+            } catch (error: any) {
+                if (error.code === "P2002" && updateData.mbid) {
+                    logger.debug(
+                        `MBID ${updateData.mbid} already used by another artist, retrying without mbid`
+                    );
+                    delete updateData.mbid;
+                    if (Object.keys(updateData).length > 0) {
+                        await prisma.artist.update({
+                            where: { id: artistId },
+                            data: updateData,
+                        });
+                    }
+                } else {
+                    throw error;
+                }
+            }
         }
     }
 

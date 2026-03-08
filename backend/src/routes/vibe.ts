@@ -36,7 +36,13 @@ interface TextSearchResult {
     acousticness: number | null;
     instrumentalness: number | null;
     arousal: number | null;
-    speechiness: number | null;
+    moodHappy: number | null;
+    moodSad: number | null;
+    moodRelaxed: number | null;
+    moodAggressive: number | null;
+    moodParty: number | null;
+    moodAcoustic: number | null;
+    moodElectronic: number | null;
 }
 
 /**
@@ -199,11 +205,17 @@ router.post("/search", requireAuth, async (req, res) => {
                     ar.name as "artistName",
                     t.energy,
                     t.valence,
-                    t.danceability,
+                    t."danceabilityMl" as danceability,
                     t.acousticness,
                     t.instrumentalness,
                     t.arousal,
-                    t.speechiness
+                    t."moodHappy",
+                    t."moodSad",
+                    t."moodRelaxed",
+                    t."moodAggressive",
+                    t."moodParty",
+                    t."moodAcoustic",
+                    t."moodElectronic"
                 FROM track_embeddings te
                 JOIN "Track" t ON te.track_id = t.id
                 JOIN "Album" a ON t."albumId" = a.id

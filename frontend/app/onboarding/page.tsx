@@ -5,17 +5,11 @@ import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import Image from "next/image";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
-import { useFeatures } from "@/lib/features-context";
 import { useAuth } from "@/lib/auth-context";
 
 export default function OnboardingPage() {
     const router = useRouter();
     const { user, isLoading: authLoading } = useAuth();
-    const {
-        musicCNN,
-        vibeEmbeddings,
-        loading: featuresLoading,
-    } = useFeatures();
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
@@ -164,14 +158,12 @@ export default function OnboardingPage() {
 
         try {
             if (step === 2) {
-                // Save all integration configs
+                // Save all integration configs and complete onboarding
                 await Promise.all([
                     api.post("/onboarding/lidarr", lidarr),
                     api.post("/onboarding/audiobookshelf", audiobookshelf),
                     api.post("/onboarding/soulseek", soulseek),
                 ]);
-                setStep(3);
-            } else if (step === 3) {
                 await api.post("/onboarding/complete");
                 router.push("/sync");
             }
@@ -231,7 +223,6 @@ export default function OnboardingPage() {
                             {[
                                 { num: 1, label: "Account" },
                                 { num: 2, label: "Integrations" },
-                                { num: 3, label: "Enrichment" },
                             ].map((s, idx) => (
                                 <div key={s.num} className="flex items-center">
                                     <div className="flex flex-col items-center">
@@ -256,7 +247,7 @@ export default function OnboardingPage() {
                                             {s.label}
                                         </span>
                                     </div>
-                                    {idx < 2 && (
+                                    {idx < 1 && (
                                         <div
                                             className={`w-16 h-0.5 mx-4 mb-6 transition-all ${
                                                 s.num < step ?
@@ -536,13 +527,24 @@ export default function OnboardingPage() {
 
                                         <div className="flex gap-3 mt-8">
                                             <button
-                                                onClick={() => setStep(3)}
-                                                onKeyDown={(e) =>
-                                                    e.key === "Enter" &&
-                                                    setStep(3)
-                                                }
+                                                onClick={async () => {
+                                                    setLoading(true);
+                                                    try {
+                                                        await api.post("/onboarding/complete");
+                                                        router.push("/sync");
+                                                    } catch {
+                                                        setError("Failed to complete setup");
+                                                        setLoading(false);
+                                                    }
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter") {
+                                                        e.currentTarget.click();
+                                                    }
+                                                }}
+                                                disabled={loading}
                                                 tabIndex={0}
-                                                className="flex-1 bg-white/5 border border-white/10 text-white/70 font-medium py-3.5 rounded-lg hover:bg-white/10 transition-all focus:outline-none focus:ring-2 focus:ring-brand/30"
+                                                className="flex-1 bg-white/5 border border-white/10 text-white/70 font-medium py-3.5 rounded-lg hover:bg-white/10 transition-all disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand/30"
                                             >
                                                 Skip for Now
                                             </button>
@@ -558,217 +560,13 @@ export default function OnboardingPage() {
                                                 className="flex-1 py-3.5 bg-[#fca200] text-black font-bold rounded-lg hover:bg-[#e69200] transition-all disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-brand/30"
                                             >
                                                 {loading ?
-                                                    "Saving..."
-                                                :   "Continue"}
-                                            </button>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {step === 3 && (
-                                    <div className="space-y-6">
-                                        <div>
-                                            <h2 className="text-2xl font-bold text-white mb-1">
-                                                Analysis Features
-                                            </h2>
-                                            <p className="text-white/60">
-                                                Advanced audio analysis
-                                                capabilities detected
-                                            </p>
-                                        </div>
-
-                                        <div className="bg-[#0f0f0f] border border-white/10 rounded-lg p-6 mt-8">
-                                            <h3 className="text-lg font-semibold text-white mb-4">
-                                                Detected Analysis Features
-                                            </h3>
-
-                                            {featuresLoading ?
-                                                <div className="flex items-center gap-3 text-gray-400">
-                                                    <GradientSpinner size="sm" />
-                                                    <span>
-                                                        Detecting available
-                                                        features...
-                                                    </span>
-                                                </div>
-                                            :   <div className="space-y-4">
-                                                    <div
-                                                        className={`p-4 rounded-lg border ${musicCNN ? "bg-green-500/5 border-green-500/20" : "bg-white/5 border-white/10"}`}
-                                                    >
-                                                        <div className="flex items-center gap-3 mb-2">
-                                                            <span
-                                                                className={
-                                                                    musicCNN ?
-                                                                        "text-green-400"
-                                                                    :   "text-gray-500"
-                                                                }
-                                                            >
-                                                                {musicCNN ?
-                                                                    "\u2713"
-                                                                :   "\u2014"}
-                                                            </span>
-                                                            <span
-                                                                className={`font-medium ${musicCNN ? "text-white" : "text-gray-500"}`}
-                                                            >
-                                                                MusicCNN Audio
-                                                                Analysis
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-sm text-white/50 ml-7">
-                                                            Extracts BPM,
-                                                            musical key, mood,
-                                                            energy,
-                                                            danceability, and
-                                                            other audio features
-                                                            using neural
-                                                            networks trained on
-                                                            music.
-                                                        </p>
-                                                    </div>
-                                                    <div
-                                                        className={`p-4 rounded-lg border ${vibeEmbeddings ? "bg-green-500/5 border-green-500/20" : "bg-white/5 border-white/10"}`}
-                                                    >
-                                                        <div className="flex items-center gap-3 mb-2">
-                                                            <span
-                                                                className={
-                                                                    (
-                                                                        vibeEmbeddings
-                                                                    ) ?
-                                                                        "text-green-400"
-                                                                    :   "text-gray-500"
-                                                                }
-                                                            >
-                                                                {(
-                                                                    vibeEmbeddings
-                                                                ) ?
-                                                                    "\u2713"
-                                                                :   "\u2014"}
-                                                            </span>
-                                                            <span
-                                                                className={`font-medium ${vibeEmbeddings ? "text-white" : "text-gray-500"}`}
-                                                            >
-                                                                CLAP Vibe
-                                                                Embeddings
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-sm text-white/50 ml-7">
-                                                            Creates audio
-                                                            fingerprints that
-                                                            capture the overall
-                                                            &quot;vibe&quot; of
-                                                            each track, enabling
-                                                            &quot;find similar
-                                                            tracks&quot;
-                                                            functionality.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            }
-
-                                            <div className="mt-6 pt-4 border-t border-white/10">
-                                                <p className="text-sm text-gray-400">
-                                                    {(
-                                                        musicCNN ||
-                                                        vibeEmbeddings
-                                                    ) ?
-                                                        <>
-                                                            These analyzers run
-                                                            in the background
-                                                            and use ~3-4GB RAM
-                                                            combined. To disable
-                                                            them and save
-                                                            resources, copy{" "}
-                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-xs">
-                                                                docker-compose.override.yml.lite
-                                                            </code>{" "}
-                                                            to{" "}
-                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-xs">
-                                                                docker-compose.override.yml
-                                                            </code>{" "}
-                                                            and restart.
-                                                        </>
-                                                    :   <>
-                                                            Running in lite
-                                                            mode. To enable
-                                                            analyzers, remove{" "}
-                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-xs">
-                                                                docker-compose.override.yml
-                                                            </code>{" "}
-                                                            and restart with{" "}
-                                                            <code className="bg-gray-700 px-1.5 py-0.5 rounded text-xs">
-                                                                docker compose
-                                                                up -d
-                                                            </code>
-                                                            .
-                                                        </>
-                                                    }
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="bg-[#0f0f0f] border border-white/10 rounded-lg p-6">
-                                            <div className="flex items-start gap-4">
-                                                <div className="w-12 h-12 bg-[#fca200]/10 border border-[#fca200]/20 rounded-lg flex items-center justify-center flex-shrink-0">
-                                                    <svg
-                                                        className="w-6 h-6 text-[#fca200]"
-                                                        fill="none"
-                                                        stroke="currentColor"
-                                                        viewBox="0 0 24 24"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth={2}
-                                                            d="M13 10V3L4 14h7v7l9-11h-7z"
-                                                        />
-                                                    </svg>
-                                                </div>
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-white mb-2">
-                                                        Artist Enrichment
-                                                    </h3>
-                                                    <p className="text-white/60 text-sm leading-relaxed">
-                                                        Enrichment automatically
-                                                        fetches additional
-                                                        metadata like artist
-                                                        bios, high-quality
-                                                        images, genres, and
-                                                        relationships from
-                                                        external sources. This
-                                                        powers smart features
-                                                        and provides a richer
-                                                        listening experience.
-                                                    </p>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {error && (
-                                            <div className="flex items-center gap-2 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
-                                                <p className="text-red-500 text-sm">
-                                                    {error}
-                                                </p>
-                                            </div>
-                                        )}
-
-                                        <div className="flex gap-3 mt-8">
-                                            <button
-                                                onClick={handleNextStep}
-                                                onKeyDown={(e) =>
-                                                    e.key === "Enter" &&
-                                                    !loading &&
-                                                    handleNextStep()
-                                                }
-                                                disabled={loading}
-                                                className="w-full py-3.5 bg-[#fca200] text-black font-bold rounded-lg hover:bg-[#e69200] transition-all duration-200 disabled:opacity-50 disabled:hover:scale-100 relative group overflow-hidden focus:outline-none focus:ring-2 focus:ring-brand/30"
-                                            >
-                                                <span className="relative z-10 flex items-center justify-center gap-2">
-                                                    {loading ?
-                                                        <>
+                                                    <>
+                                                        <span className="flex items-center justify-center gap-2">
                                                             <GradientSpinner size="sm" />
                                                             Finishing Setup...
-                                                        </>
-                                                    :   "Complete Setup"}
-                                                </span>
+                                                        </span>
+                                                    </>
+                                                :   "Complete Setup"}
                                             </button>
                                         </div>
                                     </div>

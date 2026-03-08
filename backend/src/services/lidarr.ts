@@ -83,9 +83,16 @@ class LidarrService {
     private readonly COMMAND_POLL_INTERVAL = 2000;
 
     // Metadata fetching
-    private readonly METADATA_FETCH_MAX_ATTEMPTS = 20;
-    private readonly METADATA_FETCH_DELAY = 3000;
-    private readonly METADATA_FETCH_TOTAL_TIMEOUT = 60000;
+    private readonly METADATA_FETCH_MAX_ATTEMPTS = 10;
+    private readonly METADATA_FETCH_DELAY = 2000;
+    private readonly METADATA_FETCH_TOTAL_TIMEOUT = 20000;
+
+    // Artist list cache (avoid fetching ALL artists on every album add)
+    private artistCache: { data: LidarrArtist[]; fetchedAt: number } | null = null;
+    private readonly ARTIST_CACHE_TTL = 30_000; // 30 seconds
+
+    // Dedup concurrent addArtist calls for the same MBID
+    private artistAddInFlight = new Map<string, Promise<LidarrArtist | null>>();
 
     // Root folder management
     private readonly ROOT_FOLDER_CREATE_DELAY = 2000;
@@ -200,6 +207,24 @@ class LidarrService {
             lidarrApiCallsTotal.inc({ endpoint, status });
             lidarrApiDuration.observe({ endpoint }, duration);
         }
+    }
+
+    /**
+     * Get the full artist list with caching (30s TTL).
+     * Turns N artist-list fetches per import into 1-3.
+     */
+    private async getArtistList(): Promise<LidarrArtist[]> {
+        if (this.artistCache && (Date.now() - this.artistCache.fetchedAt) < this.ARTIST_CACHE_TTL) {
+            return this.artistCache.data;
+        }
+        if (!this.client) throw new Error("Lidarr client not initialized");
+        const response = await this.client.get("/api/v1/artist");
+        this.artistCache = { data: response.data, fetchedAt: Date.now() };
+        return this.artistCache.data;
+    }
+
+    private invalidateArtistCache(): void {
+        this.artistCache = null;
     }
 
     /**
@@ -575,8 +600,8 @@ class LidarrService {
             }
 
             // Check if already exists
-            const existingArtists = await this.client.get("/api/v1/artist");
-            const exists = existingArtists.data.find(
+            const existingArtistsList = await this.getArtistList();
+            const exists = existingArtistsList.find(
                 (a: LidarrArtist) =>
                     a.foreignArtistId === artistData.foreignArtistId ||
                     (mbid && a.foreignArtistId === mbid)
@@ -690,14 +715,17 @@ class LidarrService {
                 const errorMsg = postError.response?.data?.[0]?.errorMessage || postError.message || "";
                 if (errorMsg.includes("already exists") || errorMsg.includes("UNIQUE constraint failed")) {
                     logger.debug(`   Artist added by another process, fetching existing...`);
-                    const artists = await this.client.get("/api/v1/artist");
-                    const existing = artists.data.find(
+                    this.invalidateArtistCache();
+                    const existingArtistsFallback = await this.getArtistList();
+                    const existing = existingArtistsFallback.find(
                         (a: LidarrArtist) => a.foreignArtistId === artistData.foreignArtistId
                     );
                     if (existing) return existing;
                 }
                 throw postError;
             }
+
+            this.invalidateArtistCache();
 
             logger.debug(
                 `Added artist to Lidarr: ${artistName}${
@@ -814,8 +842,8 @@ class LidarrService {
 
         try {
             // First find the artist in Lidarr
-            const artistsResponse = await this.client.get("/api/v1/artist");
-            const artist = artistsResponse.data.find(
+            const artistsList = await this.getArtistList();
+            const artist = artistsList.find(
                 (a: LidarrArtist) => a.foreignArtistId === artistMbid
             );
 
@@ -898,9 +926,9 @@ class LidarrService {
             // NEW APPROACH: Add artist first, then find album in their catalog
             // This avoids the broken external album search API
 
-            // Check if artist exists
-            const existingArtists = await this.client.get("/api/v1/artist");
-            let artist = existingArtists.data.find(
+            // Check if artist exists (uses cached artist list)
+            const existingArtistList = await this.getArtistList();
+            let artist = existingArtistList.find(
                 (a: LidarrArtist) =>
                     artistMbid && a.foreignArtistId === artistMbid
             );
@@ -924,16 +952,25 @@ class LidarrService {
             if (!artist && artistMbid) {
                 logger.debug(`   Adding artist first: ${artistName}`);
 
-                // Add artist WITHOUT searching for all albums
-                // Pass isDiscovery to tag the artist appropriately
-                artist = await this.addArtist(
-                    artistMbid,
-                    artistName,
-                    rootFolderPath,
-                    false, // Don't auto-download all albums
-                    false, // Don't monitor all albums
-                    isDiscovery // Tag as discovery if this is a discovery download
-                );
+                // Dedup concurrent addArtist calls for same MBID
+                const inFlight = this.artistAddInFlight.get(artistMbid);
+                if (inFlight) {
+                    logger.debug(`   Artist ${artistMbid} add already in-flight, waiting...`);
+                    const result = await inFlight;
+                    artist = result ?? undefined;
+                } else {
+                    const addPromise = this.addArtist(
+                        artistMbid,
+                        artistName,
+                        rootFolderPath,
+                        false,
+                        false,
+                        isDiscovery
+                    ).finally(() => this.artistAddInFlight.delete(artistMbid));
+                    this.artistAddInFlight.set(artistMbid, addPromise);
+                    const addedArtist = await addPromise;
+                    artist = addedArtist ?? undefined;
+                }
 
                 if (!artist) {
                     logger.error(` Failed to add artist`);
@@ -1141,6 +1178,12 @@ class LidarrService {
             logger.debug(
                 `   Found album in catalog: ${albumData.title} (ID: ${albumData.id})`
             );
+
+            // Skip search if album is fully downloaded
+            if (albumData.statistics?.percentOfTracks >= 100) {
+                logger.debug(`   Album fully downloaded (${albumData.statistics.trackFileCount} files), skipping search`);
+                return albumData;
+            }
 
             // Ensure artist is monitored (might have been added with monitoring disabled)
             if (!artist.monitored) {
@@ -1561,8 +1604,7 @@ class LidarrService {
         }
 
         try {
-            const response = await this.client.get("/api/v1/artist");
-            return response.data;
+            return await this.getArtistList();
         } catch (error) {
             logger.error("Lidarr get artists error:", error);
             return [];
@@ -1783,9 +1825,8 @@ class LidarrService {
         const normalizedAlbum = albumTitle.toLowerCase().trim();
 
         try {
-            // Get all artists from Lidarr
-            const artistsResponse = await this.client.get("/api/v1/artist");
-            const artists = (artistsResponse.data || []) as LidarrArtist[];
+            // Get all artists from Lidarr (cached)
+            const artists = await this.getArtistList();
 
             // Find matching artist by name
             const matchingArtist = artists.find(
@@ -1939,8 +1980,7 @@ class LidarrService {
         }
 
         try {
-            const response = await this.client.get("/api/v1/artist");
-            const artists = response.data as LidarrArtist[];
+            const artists = await this.getArtistList();
             return artists.some((a) => a.foreignArtistId === artistMbid);
         } catch (error) {
             return false;
@@ -2138,8 +2178,7 @@ class LidarrService {
         }
 
         try {
-            const response = await this.client.get("/api/v1/artist");
-            const artists: LidarrArtist[] = response.data;
+            const artists = await this.getArtistList();
 
             // Filter artists that have the specified tag
             return artists.filter((artist) => artist.tags?.includes(tagId));
@@ -2519,10 +2558,7 @@ class LidarrService {
             const fetchAlbumsForSnapshot = async (): Promise<LidarrAlbum[]> => {
                 const albums: LidarrAlbum[] = [];
 
-                const artistsResponse = await this.client!.get("/api/v1/artist");
-                const artists = Array.isArray(artistsResponse.data)
-                    ? (artistsResponse.data as LidarrArtist[])
-                    : [];
+                const artists = await this.getArtistList();
 
                 const artistBatchSize = 25;
                 for (let start = 0; start < artists.length; start += artistBatchSize) {

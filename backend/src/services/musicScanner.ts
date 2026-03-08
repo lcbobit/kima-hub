@@ -18,6 +18,7 @@ import {
     sanitizeTagString,
 } from "../utils/artistNormalization";
 import { backfillAllArtistCounts } from "./artistCountsService";
+import { checkLocalArtistImage } from "./imageStorage";
 
 // Supported audio formats
 const AUDIO_EXTENSIONS = new Set([
@@ -44,6 +45,7 @@ interface ScanResult {
     tracksAdded: number;
     tracksUpdated: number;
     tracksRemoved: number;
+    tracksCorrupt: number;
     errors: Array<{ file: string; error: string }>;
     duration: number;
 }
@@ -72,6 +74,7 @@ export class MusicScannerService {
             tracksAdded: 0,
             tracksUpdated: 0,
             tracksRemoved: 0,
+            tracksCorrupt: 0,
             errors: [],
             duration: 0,
         };
@@ -155,6 +158,17 @@ export class MusicScannerService {
                     result.errors.push(error);
                     progress.errors.push(error);
                     logger.error(`Error processing ${audioFile}:`, err);
+
+                    const relativePath = path.relative(musicPath, audioFile);
+                    const existingTrack = tracksByPath.get(relativePath);
+                    if (existingTrack) {
+                        await prisma.track.update({
+                            where: { id: existingTrack.id },
+                            data: { corrupt: true },
+                        });
+                        result.tracksCorrupt++;
+                        logger.debug(`Marked track as corrupt: ${relativePath}`);
+                    }
                 } finally {
                     filesScanned++;
                     progress.filesScanned = filesScanned;
@@ -196,35 +210,67 @@ export class MusicScannerService {
             }
 
             if (tracksToRemove.length > 0) {
-                // Safety: don't delete tracks referenced by playlists
-                const playlistProtected = await prisma.playlistItem.findMany({
+                // Convert playlist-referenced tracks to pending entries before deletion
+                const playlistItems = await prisma.playlistItem.findMany({
                     where: { trackId: { in: tracksToRemove.map((t) => t.id) } },
-                    select: { trackId: true },
+                    select: {
+                        playlistId: true,
+                        sort: true,
+                        track: {
+                            select: {
+                                title: true,
+                                album: {
+                                    select: {
+                                        title: true,
+                                        artist: { select: { name: true } },
+                                    },
+                                },
+                            },
+                        },
+                    },
                 });
-                const protectedIds = new Set(playlistProtected.map((p) => p.trackId));
 
-                const safeToRemove = tracksToRemove.filter((t) => !protectedIds.has(t.id));
-                const skipped = tracksToRemove.length - safeToRemove.length;
-
-                if (skipped > 0) {
+                if (playlistItems.length > 0) {
                     logger.debug(
-                        `Skipped ${skipped} track(s) from removal (referenced by playlists)`
+                        `Converting ${playlistItems.length} playlist reference(s) to pending entries (missing from disk)`
                     );
+                    for (const item of playlistItems) {
+                        const artistName = item.track.album.artist.name;
+                        const trackTitle = item.track.title;
+                        await prisma.playlistPendingTrack.upsert({
+                            where: {
+                                playlistId_spotifyArtist_spotifyTitle: {
+                                    playlistId: item.playlistId,
+                                    spotifyArtist: artistName,
+                                    spotifyTitle: trackTitle,
+                                },
+                            },
+                            create: {
+                                playlistId: item.playlistId,
+                                spotifyArtist: artistName,
+                                spotifyTitle: trackTitle,
+                                spotifyAlbum: item.track.album.title,
+                                sort: item.sort,
+                                missingFromDisk: true,
+                            },
+                            update: {
+                                missingFromDisk: true,
+                                spotifyAlbum: item.track.album.title,
+                                sort: item.sort,
+                            },
+                        });
+                    }
                 }
 
-                if (safeToRemove.length > 0) {
-                    await prisma.track.deleteMany({
-                        where: { id: { in: safeToRemove.map((t) => t.id) } },
-                    });
-                    result.tracksRemoved = safeToRemove.length;
-                    logger.debug(`Removed ${safeToRemove.length} missing tracks`);
-                }
+                await prisma.track.deleteMany({
+                    where: { id: { in: tracksToRemove.map((t) => t.id) } },
+                });
+                result.tracksRemoved = tracksToRemove.length;
+                logger.debug(`Removed ${tracksToRemove.length} missing tracks`);
             }
         }
 
         // Step 5: Clean up orphaned albums (albums with no tracks)
-        // Note: playlist-referenced tracks are protected in Step 4 above,
-        // so albums here should genuinely have no content
         const orphanedAlbums = await prisma.album.findMany({
             where: {
                 tracks: { none: {} },
@@ -266,7 +312,7 @@ export class MusicScannerService {
 
         result.duration = Date.now() - startTime;
         logger.debug(
-            `Scan complete: +${result.tracksAdded} ~${result.tracksUpdated} -${result.tracksRemoved} (${result.duration}ms)`
+            `Scan complete: +${result.tracksAdded} ~${result.tracksUpdated} -${result.tracksRemoved} corrupt:${result.tracksCorrupt} (${result.duration}ms)`
         );
 
         // Update artist counts in background (non-blocking)
@@ -533,6 +579,8 @@ export class MusicScannerService {
         const trackNo = metadata.common.track.no || 0;
         const duration = Math.floor(metadata.format.duration || 0);
         const mime = metadata.format.codec || "audio/mpeg";
+        const rawIsrc = metadata.common.isrc?.[0] || null;
+        const isrc = rawIsrc?.split(/[;,]/)[0]?.trim() || null;
 
         // Artist and album info
         // IMPORTANT: Prefer albumartist over artist to keep albums grouped under the primary artist
@@ -720,10 +768,21 @@ export class MusicScannerService {
                         logger.debug(
                             `[SCANNER] Consolidating temp artist "${tempArtist.name}" with real MBID: ${artistMbid}`
                         );
-                        artist = await prisma.artist.update({
-                            where: { id: tempArtist.id },
-                            data: { mbid: artistMbid },
-                        });
+                        try {
+                            artist = await prisma.artist.update({
+                                where: { id: tempArtist.id },
+                                data: { mbid: artistMbid },
+                            });
+                        } catch (mbidError: any) {
+                            if (mbidError.code === "P2002") {
+                                logger.debug(
+                                    `[SCANNER] MBID ${artistMbid} already used by another artist, keeping temp`
+                                );
+                                artist = tempArtist;
+                            } else {
+                                throw mbidError;
+                            }
+                        }
                     }
                 }
             }
@@ -739,6 +798,25 @@ export class MusicScannerService {
                         enrichmentStatus: "pending",
                     },
                 });
+            }
+
+            // Check for local artist image if none set yet
+            if (!artist.heroUrl) {
+                const pathParts = relativePath.split(path.sep);
+                for (let i = pathParts.length - 2; i >= 0; i--) {
+                    const candidateDir = pathParts.slice(0, i + 1).join(path.sep);
+                    const localImage = await checkLocalArtistImage(musicPath, candidateDir, artist.id);
+                    if (localImage) {
+                        const updated = await prisma.artist.updateMany({
+                            where: { id: artist.id, heroUrl: null },
+                            data: { heroUrl: localImage },
+                        });
+                        if (updated.count > 0) {
+                            artist = { ...artist, heroUrl: localImage };
+                        }
+                        break;
+                    }
+                }
             }
         }
 
@@ -833,12 +911,19 @@ export class MusicScannerService {
                 // Only create OwnedAlbum record for library albums (not discovery)
                 // Discovery albums are temporary and should not appear in the user's library
                 if (!isDiscoveryAlbum) {
-                    await prisma.ownedAlbum.create({
-                        data: {
+                    await prisma.ownedAlbum.upsert({
+                        where: {
+                            artistId_rgMbid: {
+                                artistId: artist.id,
+                                rgMbid,
+                            },
+                        },
+                        create: {
                             rgMbid,
                             artistId: artist.id,
                             source: "native_scan",
                         },
+                        update: {},
                     });
                 }
             }
@@ -914,6 +999,8 @@ export class MusicScannerService {
                 filePath: relativePath,
                 fileModified: stats.mtime,
                 fileSize: stats.size,
+                isrc,
+                isrcSource: isrc ? "id3" : null,
             },
             update: {
                 albumId: album.id,
@@ -923,6 +1010,8 @@ export class MusicScannerService {
                 mime,
                 fileModified: stats.mtime,
                 fileSize: stats.size,
+                corrupt: false,
+                ...(isrc ? { isrc, isrcSource: "id3" as const } : {}),
             },
         });
 

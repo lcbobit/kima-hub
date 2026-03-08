@@ -105,7 +105,3 @@ export function getMetrics(): Promise<string> {
   return register.metrics();
 }
 
-export function clearMetrics(): void {
-  register.clear();
-  logger.debug('Metrics registry cleared');
-}

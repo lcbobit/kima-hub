@@ -17,25 +17,27 @@ export interface SimilarTrack {
 const WEIGHTS = {
     clap: 0.55,
     features: {
-        energy: 0.12,
-        valence: 0.10,
-        bpm: 0.08,
-        danceability: 0.06,
-        acousticness: 0.04,
-        instrumentalness: 0.03,
-        key: 0.02,
+        energy: 0.10,
+        valence: 0.09,
+        arousal: 0.08,
+        bpm: 0.07,
+        danceability: 0.05,
+        acousticness: 0.03,
+        instrumentalness: 0.02,
+        key: 0.01,
     },
 };
 
 // Normalized weights for features-only mode (sum to 1.0)
 const FEATURES_ONLY_WEIGHTS = {
-    energy: 0.267,
-    valence: 0.222,
-    bpm: 0.178,
-    danceability: 0.133,
-    acousticness: 0.089,
-    instrumentalness: 0.067,
-    key: 0.044,
+    energy: 0.222,
+    valence: 0.200,
+    arousal: 0.178,
+    bpm: 0.156,
+    danceability: 0.111,
+    acousticness: 0.067,
+    instrumentalness: 0.044,
+    key: 0.022,
 };
 
 export async function findSimilarTracks(
@@ -74,7 +76,7 @@ async function findSimilarHybrid(
         WITH source AS (
             SELECT
                 te.embedding,
-                t.energy, t.valence, t.bpm, t.danceability,
+                t.energy, t.valence, t.arousal, t.bpm, t."danceabilityMl",
                 t.acousticness, t.instrumentalness, t.key, t."keyScale"
             FROM track_embeddings te
             JOIN "Track" t ON te.track_id = t.id
@@ -83,7 +85,7 @@ async function findSimilarHybrid(
         clap_candidates AS (
             SELECT
                 te.track_id,
-                1 - (te.embedding <=> (SELECT embedding FROM source)) as clap_sim
+                GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source))) as clap_sim
             FROM track_embeddings te
             WHERE te.track_id != ${trackId}
             ORDER BY te.embedding <=> (SELECT embedding FROM source)
@@ -97,8 +99,9 @@ async function findSimilarHybrid(
                 ${WEIGHTS.clap} * c.clap_sim +
                 ${WEIGHTS.features.energy} * (1 - ABS(COALESCE(t.energy, 0.5) - COALESCE(s.energy, 0.5))) +
                 ${WEIGHTS.features.valence} * (1 - ABS(COALESCE(t.valence, 0.5) - COALESCE(s.valence, 0.5))) +
+                ${WEIGHTS.features.arousal} * (1 - ABS(COALESCE(t.arousal, 0.5) - COALESCE(s.arousal, 0.5))) +
                 ${WEIGHTS.features.bpm} * bpm_similarity(t.bpm, s.bpm) +
-                ${WEIGHTS.features.danceability} * (1 - ABS(COALESCE(t.danceability, 0.5) - COALESCE(s.danceability, 0.5))) +
+                ${WEIGHTS.features.danceability} * (1 - ABS(COALESCE(t."danceabilityMl", 0.5) - COALESCE(s."danceabilityMl", 0.5))) +
                 ${WEIGHTS.features.acousticness} * (1 - ABS(COALESCE(t.acousticness, 0.5) - COALESCE(s.acousticness, 0.5))) +
                 ${WEIGHTS.features.instrumentalness} * (1 - ABS(COALESCE(t.instrumentalness, 0.5) - COALESCE(s.instrumentalness, 0.5))) +
                 ${WEIGHTS.features.key} * key_similarity(t.key, t."keyScale", s.key, s."keyScale")
@@ -132,7 +135,7 @@ async function findSimilarClapOnly(
             t.id,
             t.title,
             te.embedding <=> (SELECT embedding FROM source) as distance,
-            1 - (te.embedding <=> (SELECT embedding FROM source)) as similarity,
+            GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source))) as similarity,
             a.id as "albumId",
             a.title as "albumTitle",
             a."coverUrl" as "albumCoverUrl",
@@ -156,7 +159,7 @@ async function findSimilarFeaturesOnly(
 ): Promise<SimilarTrack[]> {
     const results = await prisma.$queryRaw<SimilarTrack[]>`
         WITH source AS (
-            SELECT energy, valence, bpm, danceability, acousticness, instrumentalness, key, "keyScale"
+            SELECT energy, valence, arousal, bpm, "danceabilityMl", acousticness, instrumentalness, key, "keyScale"
             FROM "Track"
             WHERE id = ${trackId}
         )
@@ -167,8 +170,9 @@ async function findSimilarFeaturesOnly(
             (
                 ${FEATURES_ONLY_WEIGHTS.energy} * (1 - ABS(COALESCE(t.energy, 0.5) - COALESCE(s.energy, 0.5))) +
                 ${FEATURES_ONLY_WEIGHTS.valence} * (1 - ABS(COALESCE(t.valence, 0.5) - COALESCE(s.valence, 0.5))) +
+                ${FEATURES_ONLY_WEIGHTS.arousal} * (1 - ABS(COALESCE(t.arousal, 0.5) - COALESCE(s.arousal, 0.5))) +
                 ${FEATURES_ONLY_WEIGHTS.bpm} * bpm_similarity(t.bpm, s.bpm) +
-                ${FEATURES_ONLY_WEIGHTS.danceability} * (1 - ABS(COALESCE(t.danceability, 0.5) - COALESCE(s.danceability, 0.5))) +
+                ${FEATURES_ONLY_WEIGHTS.danceability} * (1 - ABS(COALESCE(t."danceabilityMl", 0.5) - COALESCE(s."danceabilityMl", 0.5))) +
                 ${FEATURES_ONLY_WEIGHTS.acousticness} * (1 - ABS(COALESCE(t.acousticness, 0.5) - COALESCE(s.acousticness, 0.5))) +
                 ${FEATURES_ONLY_WEIGHTS.instrumentalness} * (1 - ABS(COALESCE(t.instrumentalness, 0.5) - COALESCE(s.instrumentalness, 0.5))) +
                 ${FEATURES_ONLY_WEIGHTS.key} * key_similarity(t.key, t."keyScale", s.key, s."keyScale")
@@ -183,7 +187,6 @@ async function findSimilarFeaturesOnly(
         JOIN "Artist" ar ON a."artistId" = ar.id
         CROSS JOIN source s
         WHERE t.id != ${trackId}
-            AND t.energy IS NOT NULL
         ORDER BY similarity DESC
         LIMIT ${limit}
     `;

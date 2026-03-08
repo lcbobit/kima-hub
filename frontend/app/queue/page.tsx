@@ -120,7 +120,7 @@ export default function QueuePage() {
                         description="Start playing music to see your queue here"
                         action={{
                             label: "Browse Library",
-                            onClick: () => router.push("/library"),
+                            onClick: () => router.push("/collection"),
                         }}
                     />
                 )}

@@ -551,7 +551,7 @@ class SpotifyService {
 
         logger.debug(`Spotify: Playlist has ${total} tracks, fetched ${allItems.length}, paginating remainder...`);
 
-        while (offset < total) {
+        while (true) {
             try {
                 const response = await axios.get(
                     `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
@@ -570,13 +570,19 @@ class SpotifyService {
 
                 allItems.push(...items);
                 offset += items.length;
-                onProgress?.(allItems.length, total);
 
-                logger.debug(`Spotify: Fetched ${allItems.length}/${total} tracks`);
-
-                if (offset < total) {
-                    await new Promise(r => setTimeout(r, 100));
+                // Update total if API reports a higher number than initially stated
+                if (response.data?.total && response.data.total > total) {
+                    total = response.data.total;
                 }
+
+                onProgress?.(allItems.length, Math.max(total, allItems.length));
+
+                logger.debug(`Spotify: Fetched ${allItems.length}/${Math.max(total, allItems.length)} tracks`);
+
+                if (items.length < limit) break; // Last page (partial)
+
+                await new Promise(r => setTimeout(r, 100));
             } catch (error: any) {
                 if (error.response?.status === 429) {
                     const retryAfter = parseInt(error.response?.headers?.["retry-after"] || "5", 10);
@@ -637,9 +643,13 @@ class SpotifyService {
             const totalTracks = playlist.tracks?.total || 0;
             let allItems = playlist.tracks?.items || [];
 
-            if (totalTracks > allItems.length && allItems.length > 0) {
+            // Paginate if API reports more tracks, OR if we received a full page
+            // (speculative: Spotify anonymous tokens may cap total at 100)
+            const PAGE_SIZE = 100;
+            if (allItems.length > 0 && (totalTracks > allItems.length || allItems.length >= PAGE_SIZE)) {
+                const effectiveTotal = Math.max(totalTracks, allItems.length + 1);
                 allItems = await this.fetchAllPlaylistTracks(
-                    playlistId, token, totalTracks, allItems, onProgress
+                    playlistId, token, effectiveTotal, allItems, onProgress
                 );
             }
 
@@ -948,6 +958,35 @@ class SpotifyService {
     }
 
     /**
+     * Fetch only the playlist name (lightweight, no track data).
+     */
+    async getPlaylistName(urlOrId: string): Promise<string | null> {
+        let playlistId = urlOrId;
+        const parsed = this.parseUrl(urlOrId);
+        if (parsed) playlistId = parsed.id;
+
+        const token = await this.getAnonymousToken();
+        if (!token) return null;
+
+        try {
+            const resp = await axios.get(
+                `https://api.spotify.com/v1/playlists/${playlistId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    },
+                    params: { fields: "name" },
+                    timeout: 5000,
+                },
+            );
+            return resp.data?.name || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Get featured/popular playlists from Spotify
      * Uses multiple fallback approaches
      */
@@ -1181,6 +1220,36 @@ class SpotifyService {
         } catch (error: any) {
             logger.error("Spotify categories error:", error.message);
             return [];
+        }
+    }
+
+    async getTrackBySpotifyId(spotifyId: string): Promise<SpotifyTrack | null> {
+        const token = await this.getAnonymousToken();
+        if (!token) return null;
+        try {
+            const resp = await axios.get(
+                `https://api.spotify.com/v1/tracks/${spotifyId}`,
+                {
+                    headers: { Authorization: `Bearer ${token}`, "User-Agent": "Mozilla/5.0" },
+                    timeout: 5000,
+                },
+            );
+            const t = resp.data;
+            return {
+                spotifyId: t.id,
+                title: t.name,
+                artist: t.artists?.[0]?.name || "",
+                artistId: t.artists?.[0]?.id || "",
+                album: t.album?.name || "",
+                albumId: t.album?.id || "",
+                isrc: t.external_ids?.isrc || null,
+                durationMs: t.duration_ms,
+                trackNumber: t.track_number,
+                previewUrl: t.preview_url || null,
+                coverUrl: t.album?.images?.[0]?.url || null,
+            };
+        } catch {
+            return null;
         }
     }
 }

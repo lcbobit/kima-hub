@@ -184,7 +184,7 @@ export default function DeezerPlaylistDetailPage() {
 
     const handleImport = () => {
         if (!playlist) return;
-        router.push(`/import/spotify?url=${encodeURIComponent(playlist.url)}`);
+        router.push(`/import/playlist?url=${encodeURIComponent(playlist.url)}`);
     };
 
     const totalDuration = playlist?.tracks.reduce((sum, track) => sum + track.durationMs, 0) || 0;
