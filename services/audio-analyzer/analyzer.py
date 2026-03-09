@@ -1298,8 +1298,7 @@ class AnalysisWorker:
                 UPDATE "Track" t
                 SET
                     "analysisStatus" = 'pending',
-                    "analysisStartedAt" = NULL,
-                    "analysisRetryCount" = COALESCE(t."analysisRetryCount", 0) + 1
+                    "analysisStartedAt" = NULL
                 WHERE t."analysisStatus" = 'processing'
                 AND (
                     (t."analysisStartedAt" IS NOT NULL AND t."analysisStartedAt" < NOW() - INTERVAL '%s minutes')
@@ -1472,8 +1471,24 @@ class AnalysisWorker:
         finally:
             cursor.close()
 
-        logger.info("Cleaning up stale processing tracks...")
-        self._cleanup_stale_processing()
+        # Debounce stale cleanup -- skip if ran recently (prevents crash-loop inflation)
+        CLEANUP_DEBOUNCE_KEY = 'audio:cleanup:last_run'
+        last_cleanup = self.redis.get(CLEANUP_DEBOUNCE_KEY)
+        cleanup_debounce_seconds = 120
+
+        if last_cleanup:
+            elapsed = time.time() - float(last_cleanup)
+            if elapsed < cleanup_debounce_seconds:
+                logger.info(f"Skipping startup cleanup (ran {elapsed:.0f}s ago, debounce {cleanup_debounce_seconds}s)")
+            else:
+                logger.info("Cleaning up stale processing tracks...")
+                self._cleanup_stale_processing()
+                self.redis.set(CLEANUP_DEBOUNCE_KEY, str(time.time()), ex=cleanup_debounce_seconds)
+        else:
+            logger.info("Cleaning up stale processing tracks...")
+            self._cleanup_stale_processing()
+            self.redis.set(CLEANUP_DEBOUNCE_KEY, str(time.time()), ex=cleanup_debounce_seconds)
+
         logger.info("Checking for failed tracks to retry...")
         self._retry_failed_tracks()
 
@@ -1527,6 +1542,7 @@ class AnalysisWorker:
                         # Periodic cleanup every IDLE_SHUTDOWN_CYCLES timeouts
                         if self.consecutive_empty >= self.IDLE_SHUTDOWN_CYCLES:
                             self._cleanup_stale_processing()
+                            self.redis.set('audio:cleanup:last_run', str(time.time()), ex=120)
                             self._retry_failed_tracks()
                             self.consecutive_empty = 0
 

@@ -1180,7 +1180,7 @@ async function executeAudioPhase(): Promise<number> {
         );
     }
 
-    // Drain purgatory: tracks stuck as pending/queued but retryCount >= MAX_RETRIES will never complete
+    // Drain purgatory: tracks stuck as pending/queued but retryCount >= MAX_RETRIES
     const purgatoryTracks = await prisma.track.findMany({
         where: {
             analysisStatus: { in: ["pending", "queued"] },
@@ -1189,24 +1189,51 @@ async function executeAudioPhase(): Promise<number> {
         select: { id: true, title: true, filePath: true, analysisRetryCount: true },
     });
     if (purgatoryTracks.length > 0) {
-        await prisma.track.updateMany({
-            where: { id: { in: purgatoryTracks.map(t => t.id) } },
-            data: {
-                analysisStatus: "permanently_failed",
-                analysisError: "Exceeded retry limit — track may be corrupted or unsupported",
-            },
-        });
+        const recovered: string[] = [];
+        const condemned: typeof purgatoryTracks = [];
+
         for (const track of purgatoryTracks) {
-            await enrichmentFailureService.recordFailure({
-                entityType: "audio",
-                entityId: track.id,
-                entityName: track.title,
-                errorMessage: "Exceeded retry limit — track may be corrupted or unsupported",
-                errorCode: "MAX_RETRIES_EXCEEDED",
-                metadata: { filePath: track.filePath, retryCount: track.analysisRetryCount },
-            });
+            const hasEmbedding = await prisma.$queryRaw<{ count: bigint }[]>`
+                SELECT COUNT(*) as count FROM track_embeddings WHERE track_id = ${track.id}
+            `;
+            if (Number(hasEmbedding[0]?.count) > 0) {
+                recovered.push(track.id);
+            } else {
+                condemned.push(track);
+            }
         }
-        logger.warn(`[Enrichment] Drained ${purgatoryTracks.length} purgatory tracks to permanently_failed`);
+
+        if (recovered.length > 0) {
+            await prisma.track.updateMany({
+                where: { id: { in: recovered } },
+                data: {
+                    analysisStatus: "completed",
+                    analysisError: null,
+                },
+            });
+            logger.info(`[Enrichment] Recovered ${recovered.length} purgatory tracks with existing embeddings`);
+        }
+
+        if (condemned.length > 0) {
+            await prisma.track.updateMany({
+                where: { id: { in: condemned.map(t => t.id) } },
+                data: {
+                    analysisStatus: "permanently_failed",
+                    analysisError: "Exceeded retry limit -- track may be corrupted or unsupported",
+                },
+            });
+            for (const track of condemned) {
+                await enrichmentFailureService.recordFailure({
+                    entityType: "audio",
+                    entityId: track.id,
+                    entityName: track.title,
+                    errorMessage: "Exceeded retry limit -- track may be corrupted or unsupported",
+                    errorCode: "MAX_RETRIES_EXCEEDED",
+                    metadata: { filePath: track.filePath, retryCount: track.analysisRetryCount },
+                });
+            }
+            logger.warn(`[Enrichment] Drained ${condemned.length} purgatory tracks to permanently_failed`);
+        }
     }
 
     if (audioAnalysisCleanupService.isCircuitOpen()) {

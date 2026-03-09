@@ -132,7 +132,7 @@ class AudioAnalysisCleanupService {
         let recoveredCount = 0;
 
         for (const track of staleTracks) {
-            const newRetryCount = (track.analysisRetryCount || 0) + 1;
+            const currentRetryCount = track.analysisRetryCount || 0;
             const trackName = `${track.album.artist.name} - ${track.title}`;
 
             const existingEmbedding = await prisma.$queryRaw<{ count: bigint }[]>`
@@ -157,13 +157,12 @@ class AudioAnalysisCleanupService {
                 continue;
             }
 
-            if (newRetryCount >= MAX_RETRIES) {
+            if (currentRetryCount >= MAX_RETRIES) {
                 await prisma.track.update({
                     where: { id: track.id },
                     data: {
                         analysisStatus: "permanently_failed",
                         analysisError: `Exceeded ${MAX_RETRIES} retry attempts (stale processing)`,
-                        analysisRetryCount: newRetryCount,
                         analysisStartedAt: null,
                     },
                 });
@@ -176,7 +175,7 @@ class AudioAnalysisCleanupService {
                     errorCode: "MAX_RETRIES_EXCEEDED",
                     metadata: {
                         filePath: track.filePath,
-                        retryCount: newRetryCount,
+                        retryCount: currentRetryCount,
                     },
                 });
 
@@ -190,13 +189,12 @@ class AudioAnalysisCleanupService {
                     data: {
                         analysisStatus: "pending",
                         analysisStartedAt: null,
-                        analysisRetryCount: newRetryCount,
-                        analysisError: `Reset after stale processing (attempt ${newRetryCount}/${MAX_RETRIES})`,
+                        analysisError: `Reset after stale processing (attempt ${currentRetryCount}/${MAX_RETRIES})`,
                     },
                 });
 
                 logger.debug(
-                    `[AudioAnalysisCleanup] Reset for retry (${newRetryCount}/${MAX_RETRIES}): ${trackName}`
+                    `[AudioAnalysisCleanup] Reset for retry (${currentRetryCount}/${MAX_RETRIES}): ${trackName}`
                 );
                 resetCount++;
             }
