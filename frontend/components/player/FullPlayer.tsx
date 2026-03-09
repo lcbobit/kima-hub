@@ -42,10 +42,6 @@ import { SleepTimer } from "./SleepTimer";
 import { useLyricsToggle } from "@/hooks/useLyricsToggle";
 
 
-/**
- * FullPlayer - UI-only component for desktop bottom player
- * Does NOT manage audio element - that's handled by AudioElement component
- */
 export function FullPlayer() {
     const { toast } = useToast();
     // Use split contexts to avoid re-rendering on every currentTime update

@@ -1124,7 +1124,6 @@ class ApiClient {
         );
     }
 
-    // Alias for compatibility with AudioElement
     async updatePodcastProgress(
         podcastId: string,
         episodeId: string,

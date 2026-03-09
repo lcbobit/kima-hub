@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useToast } from "@/lib/toast-context";
-import { audioEngine } from "@/lib/audio-engine";
+import { useAudioController } from "@/lib/audio-controller-context";
 import { useAudioState } from "@/lib/audio-state-context";
 
 export function usePreviewPlayer() {
+    const controller = useAudioController();
     const { toast } = useToast();
     const { volume, isMuted } = useAudioState();
     const [currentPreview, setCurrentPreview] = useState<string | null>(null);
@@ -36,11 +37,11 @@ export function usePreviewPlayer() {
                 audio.src = "";
             });
             if (mainPlayerWasPausedRef.current) {
-                audioEngine.play();
+                controller?.play();
                 mainPlayerWasPausedRef.current = false;
             }
         };
-    }, []);
+    }, [controller]);
 
     const handleTogglePreview = useCallback(
         (albumId: string, previewUrl: string) => {
@@ -77,13 +78,13 @@ export function usePreviewPlayer() {
                 setCurrentPreview(null);
                 // Resume main player if it was playing before
                 if (mainPlayerWasPausedRef.current) {
-                    audioEngine.play();
+                    controller?.play();
                     mainPlayerWasPausedRef.current = false;
                 }
             } else {
                 // Pause the main player if it's playing
-                if (audioEngine.isPlaying()) {
-                    audioEngine.pause();
+                if (controller?.isPlaying()) {
+                    controller?.pause();
                     mainPlayerWasPausedRef.current = true;
                 }
 
@@ -95,7 +96,7 @@ export function usePreviewPlayer() {
                         setCurrentPreview(null);
                         // Resume main player if it was playing before
                         if (mainPlayerWasPausedRef.current) {
-                            audioEngine.play();
+                            controller?.play();
                             mainPlayerWasPausedRef.current = false;
                         }
                     };
@@ -103,7 +104,7 @@ export function usePreviewPlayer() {
                         toast.error("Failed to load preview");
                         setCurrentPreview(null);
                         if (mainPlayerWasPausedRef.current) {
-                            audioEngine.play();
+                            controller?.play();
                             mainPlayerWasPausedRef.current = false;
                         }
                     };
@@ -124,7 +125,7 @@ export function usePreviewPlayer() {
                     });
             }
         },
-        [toast, currentPreview, previewAudios, applyCurrentPlayerVolume]
+        [toast, currentPreview, previewAudios, applyCurrentPlayerVolume, controller]
     );
 
     return {

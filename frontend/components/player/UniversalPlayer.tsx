@@ -7,16 +7,6 @@ import { FullPlayer } from "./FullPlayer";
 import { OverlayPlayer } from "./OverlayPlayer";
 import { useEffect, useRef } from "react";
 
-/**
- * UniversalPlayer - Manages player UI rendering based on mode and device
- * NOTE: The AudioElement is rendered by ConditionalAudioProvider, NOT here
- * This component only handles the UI (MiniPlayer, FullPlayer, OverlayPlayer)
- *
- * Mobile/Tablet behavior:
- * - Defaults to overlay mode when new media starts
- * - If user closes overlay, shows mini player at bottom
- * - No full-width player on mobile
- */
 export function UniversalPlayer() {
     const { playerMode, setPlayerMode, currentTrack, currentAudiobook, currentPodcast, isPlaying } =
         useAudio();
@@ -52,7 +42,7 @@ export function UniversalPlayer() {
     return (
         <>
             {/* Conditional UI rendering based on mode and device */}
-            {/* Note: AudioElement is rendered by ConditionalAudioProvider */}
+            {/* Note: <audio> element is rendered by ConditionalAudioProvider */}
             {/* Always show player UI (like Spotify), even when no media is playing */}
             {playerMode === "overlay" && hasMedia ? (
                 <OverlayPlayer />

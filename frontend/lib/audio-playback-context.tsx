@@ -6,10 +6,12 @@ import {
     useState,
     useRef,
     useCallback,
+    useEffect,
     ReactNode,
     useMemo,
 } from "react";
 import { useAudioState } from "./audio-state-context";
+import { useAudioController } from "./audio-controller-context";
 
 interface AudioPlaybackContextType {
     isPlaying: boolean;
@@ -24,7 +26,6 @@ interface AudioPlaybackContextType {
     setCurrentTimeFromEngine: (time: number) => void;
     setDuration: (duration: number) => void;
     setIsBuffering: (buffering: boolean) => void;
-    setTargetSeekPosition: (position: number | null) => void;
     setCanSeek: (canSeek: boolean) => void;
     setDownloadProgress: (progress: number | null) => void;
     setAudioError: (error: string | null) => void;
@@ -38,30 +39,22 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
     const [isBuffering, setIsBuffering] = useState(false);
-    const setTargetSeekPosition = useCallback((_position: number | null) => {}, []);
     const [canSeek, setCanSeek] = useState(true);
     const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
     const [audioError, setAudioError] = useState<string | null>(null);
     const [isHydrated] = useState(() => typeof window !== "undefined");
 
-    // Timestamp of last seek - used to debounce stale timeupdate values
     const lastSeekTimeRef = useRef(0);
 
     const clearAudioError = useCallback(() => {
         setAudioError(null);
     }, []);
 
-    // setCurrentTimeFromEngine - filters stale values near a seek
     const setCurrentTimeFromEngine = useCallback((time: number) => {
-        // Skip timeupdate events that arrive within 300ms of a seek
-        // to prevent stale position values from causing UI flicker
         if (Date.now() - lastSeekTimeRef.current < 300) return;
         setCurrentTime(time);
     }, []);
 
-    // setCurrentTime marks seek timestamp to debounce stale engine updates.
-    // Controls context calls this for optimistic updates,
-    // and the engine calls setCurrentTimeFromEngine which respects the debounce.
     const setCurrentTimeWithSeekMark = useCallback((time: number) => {
         lastSeekTimeRef.current = Date.now();
         setCurrentTime(time);
@@ -85,6 +78,101 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
         }
     }
 
+    const controller = useAudioController();
+
+    useEffect(() => {
+        if (!controller) return;
+
+        const onPlay = () => {
+            setIsPlaying(true);
+            setIsBuffering(false);
+            setAudioError(null);
+        };
+
+        const onPause = () => {
+            setIsPlaying(false);
+        };
+
+        const onTimeUpdate = (data: unknown) => {
+            const { time } = data as { time: number };
+            setCurrentTimeFromEngine(time);
+        };
+
+        const onCanPlay = (data: unknown) => {
+            const { duration: dur } = data as { duration: number };
+            setDuration(dur || 0);
+            setIsBuffering(false);
+            setAudioError(null);
+        };
+
+        const onWaiting = () => {
+            setIsBuffering(true);
+        };
+
+        const onError = (data: unknown) => {
+            const { error, code } = data as { error: string; code?: number };
+            setIsPlaying(false);
+            setIsBuffering(false);
+            const errorMessage =
+                code === 2
+                    ? "Playback interrupted -- stream may have been taken by another session"
+                    : typeof error === "string"
+                      ? error
+                      : "Audio playback error";
+            setAudioError(errorMessage);
+        };
+
+        const onNeedsResume = () => {
+            setAudioError("Tap play to resume");
+        };
+
+        controller.on("play", onPlay);
+        controller.on("pause", onPause);
+        controller.on("timeupdate", onTimeUpdate);
+        controller.on("canplay", onCanPlay);
+        controller.on("waiting", onWaiting);
+        controller.on("error", onError);
+        controller.on("needs-resume", onNeedsResume);
+
+        return () => {
+            controller.off("play", onPlay);
+            controller.off("pause", onPause);
+            controller.off("timeupdate", onTimeUpdate);
+            controller.off("canplay", onCanPlay);
+            controller.off("waiting", onWaiting);
+            controller.off("error", onError);
+            controller.off("needs-resume", onNeedsResume);
+        };
+    }, [controller, setCurrentTimeFromEngine]);
+
+    useEffect(() => {
+        if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+        if (!controller) return;
+
+        const tabId = crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const channel = new BroadcastChannel("kima-audio-playback");
+
+        channel.onmessage = (event: MessageEvent) => {
+            const msg = event.data;
+            if (msg?.type === "playback-claimed" && msg.tabId !== tabId) {
+                controller.pause();
+            }
+        };
+
+        const onPlay = () => {
+            try {
+                channel.postMessage({ type: "playback-claimed", tabId });
+            } catch {}
+        };
+
+        controller.on("play", onPlay);
+
+        return () => {
+            controller.off("play", onPlay);
+            channel.close();
+        };
+    }, [controller]);
+
     const value = useMemo(
         () => ({
             isPlaying,
@@ -99,7 +187,6 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
             setCurrentTimeFromEngine,
             setDuration,
             setIsBuffering,
-            setTargetSeekPosition,
             setCanSeek,
             setDownloadProgress,
             setAudioError,
@@ -115,7 +202,6 @@ export function AudioPlaybackProvider({ children }: { children: ReactNode }) {
             audioError,
             setCurrentTimeWithSeekMark,
             setCurrentTimeFromEngine,
-            setTargetSeekPosition,
             clearAudioError,
         ]
     );

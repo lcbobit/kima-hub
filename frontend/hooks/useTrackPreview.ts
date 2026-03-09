@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api } from "@/lib/api";
 import { useToast } from "@/lib/toast-context";
-import { audioEngine } from "@/lib/audio-engine";
+import { useAudioController } from "@/lib/audio-controller-context";
 import { useAudioState } from "@/lib/audio-state-context";
 
 interface PreviewableTrack {
@@ -10,6 +10,7 @@ interface PreviewableTrack {
 }
 
 export function useTrackPreview<T extends PreviewableTrack>() {
+    const controller = useAudioController();
     const { toast } = useToast();
     const { volume, isMuted } = useAudioState();
     const [previewTrack, setPreviewTrack] = useState<string | null>(null);
@@ -98,8 +99,8 @@ export function useTrackPreview<T extends PreviewableTrack>() {
                 return;
             }
 
-            if (audioEngine.isPlaying()) {
-                audioEngine.pause();
+            if (controller?.isPlaying()) {
+                controller.pause();
                 mainPlayerWasPausedRef.current = true;
             }
 
@@ -111,7 +112,7 @@ export function useTrackPreview<T extends PreviewableTrack>() {
                 setPreviewPlaying(false);
                 setPreviewTrack(null);
                 if (mainPlayerWasPausedRef.current) {
-                    audioEngine.play();
+                    controller?.play();
                     mainPlayerWasPausedRef.current = false;
                 }
             };
@@ -121,7 +122,7 @@ export function useTrackPreview<T extends PreviewableTrack>() {
                 setPreviewPlaying(false);
                 setPreviewTrack(null);
                 if (mainPlayerWasPausedRef.current) {
-                    audioEngine.play();
+                    controller?.play();
                     mainPlayerWasPausedRef.current = false;
                 }
             };
@@ -179,11 +180,11 @@ export function useTrackPreview<T extends PreviewableTrack>() {
             }
         };
 
-        audioEngine.on("play", stopPreview);
+        controller?.on("play", stopPreview);
         return () => {
-            audioEngine.off("play", stopPreview);
+            controller?.off("play", stopPreview);
         };
-    }, []);
+    }, [controller]);
 
     useEffect(() => {
         return () => {
@@ -194,11 +195,11 @@ export function useTrackPreview<T extends PreviewableTrack>() {
                 previewAudioRef.current = null;
             }
             if (mainPlayerWasPausedRef.current) {
-                audioEngine.play();
+                controller?.play();
                 mainPlayerWasPausedRef.current = false;
             }
         };
-    }, []);
+    }, [controller]);
 
     return {
         previewTrack,

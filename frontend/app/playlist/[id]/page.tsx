@@ -6,7 +6,7 @@ import Image from "next/image";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { api } from "@/lib/api";
 import { useAudioState, useAudioPlayback, useAudioControls, Track as AudioTrack } from "@/lib/audio-context";
-import { audioEngine } from "@/lib/audio-engine";
+import { useAudioController } from "@/lib/audio-controller-context";
 import { cn } from "@/utils/cn";
 import { shuffleArray } from "@/utils/shuffle";
 import { formatTime } from "@/utils/formatTime";
@@ -79,6 +79,7 @@ interface PendingTrack {
 }
 
 export default function PlaylistDetailPage() {
+    const controller = useAudioController();
     const params = useParams();
     const router = useRouter();
     const queryClient = useQueryClient();
@@ -152,7 +153,7 @@ export default function PlaylistDetailPage() {
             const previewUrl = result.previewUrl;
 
             const audio = new Audio(previewUrl);
-            const { volume, isMuted } = audioEngine.getState();
+            const { volume, isMuted } = controller?.getState() ?? { volume: 1, isMuted: false };
             audio.volume = isMuted ? 0 : volume;
             audio.onended = () => setPlayingPreviewId(null);
             audio.onerror = (e) => {

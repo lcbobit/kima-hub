@@ -89,6 +89,19 @@ Closes #143, #141.
 - **Import toast notifications** -- SSE events trigger toast notifications on import completion, failure, or cancellation via custom DOM events
 - **Onboarding simplification** -- Removed informational step 3, onboarding is now Account + Integrations + done
 
+## Audio Engine Rewrite
+
+- **Single-element architecture** -- Replaced 3 competing `new Audio()` elements with a single `<audio>` element rendered as JSX, connected to `AudioContext` via `createMediaElementSource()`. Fixes iOS Safari refusing to play (only allows one active audio element)
+- **AudioController class** -- Imperative wrapper around HTMLAudioElement with event system, volume management, network retry with exponential backoff, and preload hints. Gesture handlers call `controller.play()` directly instead of `setIsPlaying(true)` -> useEffect -> `play()`, preserving gesture context on mobile
+- **Deleted AudioElement.tsx** (696 lines) -- Monolithic component that mixed DOM manipulation, React state, BroadcastChannel, MediaSession, progress saving, and error recovery. Logic distributed to appropriate context providers
+- **Deleted audio-engine.ts** (564 lines) -- Singleton class that created Audio elements imperatively. Replaced by AudioController operating on the single JSX-rendered element
+- **Deleted audio-seek-emitter.ts** (30 lines) -- Custom EventEmitter for seek coordination. Replaced by direct controller method calls
+- **AudioPlaybackProvider** -- Absorbed BroadcastChannel multi-tab coordination and controller event subscriptions (play/pause/timeupdate/canplay/waiting/error)
+- **AudioControlsProvider** -- Absorbed ended handler, canplay handler, error handler, progress saving (audiobook/podcast), preload hints, volume/mute sync, and foreground recovery from deleted AudioElement
+- **useMediaSession rewrite** -- Simplified from 323 to 199 lines. Removed timing workarounds, `hasPlayedLocallyRef`, `handlersRegisteredRef`, `wasPlayingBeforeInterruptionRef`. Uses controller events as single source of truth for playbackState sync. Throttled `setPositionState` to every 5s
+- **Visibility change save** -- Audiobook/podcast progress saved when tab goes to background, not just on pause/end/unmount
+- **Network retry reset** -- `networkRetryCount` properly reset on successful playback
+
 ## Sleep Timer
 
 - **Sleep timer** -- Configurable auto-pause timer on all player modes (mini, full, overlay). Presets at 15/30/45/60/90/120 minutes plus custom input. Countdown displays next to timer icon when active
