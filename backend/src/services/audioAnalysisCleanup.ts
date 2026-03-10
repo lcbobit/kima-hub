@@ -2,6 +2,9 @@ import { prisma } from "../utils/db";
 import { logger } from "../utils/logger";
 import { enrichmentFailureService } from "./enrichmentFailureService";
 
+// Keep in sync with the INTERVAL '15 minutes' literals in cleanupStaleProcessing() raw SQL.
+// Cannot parameterize intervals in Prisma tagged templates ($queryRaw treats interpolated
+// values as query parameters, and PostgreSQL rejects parameterized INTERVAL literals).
 const STALE_THRESHOLD_MINUTES = 15;
 const MAX_RETRIES = 3;
 const CIRCUIT_BREAKER_THRESHOLD = 30;

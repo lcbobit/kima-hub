@@ -374,6 +374,14 @@ export function CacheSection({ settings, onUpdate }: CacheSectionProps) {
         }, 500);
     }, [clapWorkersConfig, queryClient, setClapWorkersMutation]);
 
+    // Clean up debounce timers on unmount
+    useEffect(() => {
+        return () => {
+            if (workerDebounceRef.current) clearTimeout(workerDebounceRef.current);
+            if (clapDebounceRef.current) clearTimeout(clapDebounceRef.current);
+        };
+    }, []);
+
     const enrichmentSpeed = concurrencyConfig?.concurrency ?? 1;
 
     useEffect(() => {
