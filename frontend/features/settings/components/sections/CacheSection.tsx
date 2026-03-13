@@ -24,6 +24,7 @@ import {
     AlertTriangle,
     Waves,
     ChevronDown,
+    type LucideIcon,
 } from "lucide-react";
 
 interface CacheSectionProps {
@@ -70,7 +71,7 @@ function EnrichmentStage({
     queued = 0,
     processing = 0,
 }: {
-    icon: React.ElementType;
+    icon: LucideIcon;
     label: string;
     description: string;
     completed: number;

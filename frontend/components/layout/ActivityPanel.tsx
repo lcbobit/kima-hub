@@ -15,6 +15,7 @@ import {
     ChevronLeft,
     ChevronRight,
     X,
+    type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
@@ -22,7 +23,7 @@ import { useActivityPanelSettings } from "@/lib/activity-panel-settings-context"
 
 type ActivityTab = "notifications" | "active" | "imports" | "history" | "settings";
 
-const TABS: { id: ActivityTab; label: string; icon: React.ElementType }[] = [
+const TABS: { id: ActivityTab; label: string; icon: LucideIcon }[] = [
     { id: "notifications", label: "Notifications", icon: Bell },
     { id: "active", label: "Active", icon: Download },
     { id: "imports", label: "Imports", icon: ListMusic },
