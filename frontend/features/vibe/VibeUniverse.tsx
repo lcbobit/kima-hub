@@ -7,7 +7,6 @@ import {
     PerspectiveCamera,
     OrbitControls,
     PointerLockControls,
-    Stars,
 } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import * as THREE from "three";
@@ -67,6 +66,56 @@ function FlyMovement({ speed = 30 }: { speed?: number }) {
     });
 
     return null;
+}
+
+function TronGrid({ worldCenter }: { worldCenter: readonly [number, number, number] }) {
+    const material = useMemo(() => {
+        return new THREE.ShaderMaterial({
+            uniforms: {
+                uCenter: { value: new THREE.Vector2(worldCenter[0], worldCenter[1]) },
+                uGridSpacing: { value: WORLD_SCALE * 0.05 },
+                uFadeRadius: { value: WORLD_SCALE * 1.5 },
+                uColor: { value: new THREE.Color(0.0, 0.35, 0.45) },
+            },
+            vertexShader: `
+                varying vec3 vWorldPos;
+                void main() {
+                    vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                    vWorldPos = worldPos.xyz;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform vec2 uCenter;
+                uniform float uGridSpacing;
+                uniform float uFadeRadius;
+                uniform vec3 uColor;
+                varying vec3 vWorldPos;
+                void main() {
+                    vec2 coord = vWorldPos.xy / uGridSpacing;
+                    vec2 grid = abs(fract(coord - 0.5) - 0.5) / fwidth(coord);
+                    float line = min(grid.x, grid.y);
+                    float alpha = 1.0 - min(line, 1.0);
+                    float dist = length(vWorldPos.xy - uCenter) / uFadeRadius;
+                    alpha *= smoothstep(1.0, 0.2, dist);
+                    alpha *= 0.07;
+                    gl_FragColor = vec4(uColor, alpha);
+                }
+            `,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.DoubleSide,
+        });
+    }, [worldCenter]);
+
+    return (
+        <mesh
+            position={[worldCenter[0], worldCenter[1], -WORLD_SCALE * 0.15]}
+            material={material}
+        >
+            <planeGeometry args={[WORLD_SCALE * 4, WORLD_SCALE * 4]} />
+        </mesh>
+    );
 }
 
 function SceneContent({
@@ -158,25 +207,8 @@ function SceneContent({
                 </>
             )}
 
-            {/* Deep background star layers for endless depth */}
-            <Stars
-                radius={WORLD_SCALE * 4}
-                depth={WORLD_SCALE * 3}
-                count={isMobile ? 3000 : 8000}
-                factor={WORLD_SCALE * 0.015}
-                saturation={0.15}
-                fade
-                speed={0.1}
-            />
-            <Stars
-                radius={WORLD_SCALE * 8}
-                depth={WORLD_SCALE * 6}
-                count={isMobile ? 1500 : 4000}
-                factor={WORLD_SCALE * 0.008}
-                saturation={0}
-                fade
-                speed={0.05}
-            />
+            {/* Tron-style background grid */}
+            <TronGrid worldCenter={worldCenter} />
 
             <TrackCloud
                 tracks={tracks}
@@ -195,9 +227,9 @@ function SceneContent({
                 <EffectComposer>
                     <Bloom
                         mipmapBlur
-                        intensity={0.3}
-                        luminanceThreshold={0.4}
-                        luminanceSmoothing={0.9}
+                        intensity={0.15}
+                        luminanceThreshold={0.7}
+                        luminanceSmoothing={0.5}
                     />
                 </EffectComposer>
             )}

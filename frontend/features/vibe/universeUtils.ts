@@ -35,7 +35,7 @@ function blendMoodColor(track: MapTrack): [number, number, number] {
     b = b / totalWeight;
 
     const gray = (r + g + b) / 3;
-    const boost = 1.6;
+    const boost = 2.0;
     r = Math.max(0, Math.min(255, gray + (r - gray) * boost));
     g = Math.max(0, Math.min(255, gray + (g - gray) * boost));
     b = Math.max(0, Math.min(255, gray + (b - gray) * boost));

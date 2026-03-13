@@ -34,8 +34,8 @@ const vertexShader = `
         vColor = customColor;
         vOpacity = opacity;
         vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-        gl_PointSize = size * (400.0 / -mvPosition.z);
-        gl_PointSize = clamp(gl_PointSize, 1.5, 40.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_PointSize = clamp(gl_PointSize, 1.0, 16.0);
         gl_Position = projectionMatrix * mvPosition;
     }
 `;
@@ -46,12 +46,12 @@ const fragmentShader = `
     void main() {
         float d = length(gl_PointCoord - vec2(0.5));
         if (d > 0.5) discard;
-        // Bright core with soft atmospheric halo
-        float core = 1.0 - smoothstep(0.0, 0.15, d);
-        float inner = 1.0 - smoothstep(0.05, 0.3, d);
-        float halo = 1.0 - smoothstep(0.15, 0.5, d);
-        float alpha = (core * 0.95 + inner * 0.4 + halo * 0.12) * vOpacity;
-        vec3 color = vColor * (1.0 + core * 1.2);
+        // Sharp digital core with thin neon ring
+        float core = 1.0 - smoothstep(0.0, 0.08, d);
+        float ring = smoothstep(0.12, 0.18, d) * (1.0 - smoothstep(0.18, 0.35, d));
+        float glow = 1.0 - smoothstep(0.0, 0.5, d);
+        float alpha = (core * 1.0 + ring * 0.3 + glow * 0.06) * vOpacity;
+        vec3 color = vColor * (1.0 + core * 0.8);
         gl_FragColor = vec4(color, alpha);
     }
 `;
@@ -94,7 +94,7 @@ export function TrackCloud({
             colors[i * 3 + 2] = color.b;
 
             const energy = track.energy ?? 0.5;
-            sizes[i] = 2.0 + energy * 4.0;
+            sizes[i] = 1.0 + energy * 2.0;
             opacities[i] = 0.85;
         }
 
@@ -150,7 +150,7 @@ export function TrackCloud({
         const mat = new THREE.LineBasicMaterial({
             vertexColors: true,
             transparent: true,
-            opacity: 0.15,
+            opacity: 0.25,
             blending: THREE.NormalBlending,
         });
 
@@ -174,7 +174,7 @@ export function TrackCloud({
             if (isSelected) {
                 colors.setXYZ(i, 0.9, 0.9, 0.9);
                 opacities.setX(i, 1.0);
-                sizes.setX(i, (2.0 + energy * 4.0) * 2.0);
+                sizes.setX(i, (1.0 + energy * 2.0) * 2.5);
             } else if (isHighlighted) {
                 const c = getTrackHighlightColor(track);
                 colors.setXYZ(i, c.r, c.g, c.b);
@@ -184,7 +184,7 @@ export function TrackCloud({
                 const c = getTrackColor(track);
                 colors.setXYZ(i, c.r * 0.4, c.g * 0.4, c.b * 0.4);
                 opacities.setX(i, 0.25);
-                sizes.setX(i, (2.0 + energy * 4.0) * 0.6);
+                sizes.setX(i, (1.0 + energy * 2.0) * 0.6);
             }
         }
 
