@@ -78,15 +78,15 @@ export const getApiBaseUrl = () => {
     const frontendPort =
         window.location.port ||
         (window.location.protocol === "https:" ? "443" : "80");
-    if (
+   /// if (
    //     frontendPort === "3030" ||
      //   frontendPort === "443" ||
       //  frontendPort === "80"
         return "";
-    ) {
+   // ) {
         // Use relative paths - Next.js rewrites will proxy to backend
-        return "";
-    }
+    //    return "";
+   // }
 
     // Development mode: Backend on separate port
     const currentHost = window.location.hostname;
