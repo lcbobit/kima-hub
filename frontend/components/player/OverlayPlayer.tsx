@@ -5,6 +5,7 @@ import { useMediaInfo } from "@/hooks/useMediaInfo";
 import Image from "next/image";
 import Link from "next/link";
 import { useRef, useState } from "react";
+import { useVibeToggle } from "@/hooks/useVibeToggle";
 import {
     Play,
     Pause,
@@ -26,7 +27,6 @@ import { formatTime, formatTimeRemaining } from "@/utils/formatTime";
 import { cn } from "@/utils/cn";
 import { usePlaybackProgress } from "@/hooks/usePlaybackProgress";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
-import { useToast } from "@/lib/toast-context";
 import { SeekSlider } from "./SeekSlider";
 import { SleepTimer } from "./SleepTimer";
 import { useFeatures } from "@/lib/features-context";
@@ -34,7 +34,6 @@ import { MobileLyricsView } from "@/components/lyrics/MobileLyricsView";
 import { useLyricsToggle } from "@/hooks/useLyricsToggle";
 
 export function OverlayPlayer() {
-    const { toast } = useToast();
     const {
         currentTrack,
         currentAudiobook,
@@ -42,7 +41,7 @@ export function OverlayPlayer() {
         playbackType,
         isShuffle,
         repeatMode,
-        vibeMode,
+        activeOperation,
     } = useAudioState();
     const {
         isPlaying,
@@ -65,8 +64,6 @@ export function OverlayPlayer() {
         skipBackward,
         toggleShuffle,
         toggleRepeat,
-        startVibeMode,
-        stopVibeMode,
     } = useAudioControls();
 
     const isMobile = useIsMobile();
@@ -76,7 +73,7 @@ export function OverlayPlayer() {
     // Swipe state for track skipping
     const touchStartX = useRef<number | null>(null);
     const [swipeOffset, setSwipeOffset] = useState(0);
-    const [isVibeLoading, setIsVibeLoading] = useState(false);
+    const { handleVibeToggle, isVibeLoading } = useVibeToggle();
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
     const { handleLyricsToggle, isLyricsActive } = useLyricsToggle({ isMobile: isMobileOrTablet });
     const { title, subtitle, coverUrl, artistLink, mediaLink, hasMedia } = useMediaInfo(500);
@@ -110,33 +107,6 @@ export function OverlayPlayer() {
 
         setSwipeOffset(0);
         touchStartX.current = null;
-    };
-
-    // Handle Vibe toggle
-    const handleVibeToggle = async () => {
-        if (!currentTrack?.id) return;
-
-        if (vibeMode) {
-            stopVibeMode();
-            toast.success("Vibe mode off");
-            return;
-        }
-
-        setIsVibeLoading(true);
-        try {
-            const result = await startVibeMode();
-
-            if (result.success && result.trackCount > 0) {
-                toast.success(`Vibe mode on - ${result.trackCount} similar tracks queued`);
-            } else {
-                toast.error("Couldn't find matching tracks");
-            }
-        } catch (error) {
-            console.error("Failed to start vibe match:", error);
-            toast.error("Failed to match vibe");
-        } finally {
-            setIsVibeLoading(false);
-        }
     };
 
     return (
@@ -188,7 +158,7 @@ export function OverlayPlayer() {
                         <div
                             className={cn(
                                 "absolute inset-0 rounded-2xl blur-2xl opacity-50",
-                                vibeMode
+                                activeOperation.type !== 'idle'
                                     ? "bg-gradient-to-br from-brand/30 via-transparent to-purple-500/30"
                                     : "bg-gradient-to-br from-brand/20 via-transparent to-[#f97316]/20"
                             )}
@@ -449,12 +419,12 @@ export function OverlayPlayer() {
                                     "transition-colors",
                                     !canSkip
                                         ? "text-gray-700 cursor-not-allowed"
-                                        : vibeMode
+                                        : activeOperation.type !== 'idle'
                                         ? "text-brand"
                                         : "text-gray-500 hover:text-brand"
                                 )}
                                 title={
-                                    vibeMode
+                                    activeOperation.type !== 'idle'
                                         ? "Turn off vibe mode"
                                         : "Match this vibe"
                                 }

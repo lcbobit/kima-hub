@@ -97,6 +97,13 @@ export interface Podcast {
 
 type SetStateAction<T> = T | ((prev: T) => T);
 
+export type VibeOperation =
+    | { type: 'idle' }
+    | { type: 'vibe'; sourceTrackId: string; sourceFeatures: AudioFeatures; trackIds: string[] }
+    | { type: 'drift'; startTrackId: string; endTrackId: string; pathTrackIds: string[] }
+    | { type: 'blend'; addTrackIds: string[]; subtractTrackIds: string[]; resultTrackIds: string[] }
+    | { type: 'similar'; sourceTrackId: string; trackIds: string[] };
+
 interface AudioStateContextType {
     // Media state
     currentTrack: Track | null;
@@ -118,10 +125,8 @@ interface AudioStateContextType {
     volume: number;
     isMuted: boolean;
 
-    // Vibe mode state
-    vibeMode: boolean;
-    vibeSourceFeatures: AudioFeatures | null;
-    vibeQueueIds: string[];
+    // Vibe operation state
+    activeOperation: VibeOperation;
 
     // Internal state
     repeatOneCount: number;
@@ -144,11 +149,7 @@ interface AudioStateContextType {
     setVolume: (volume: SetStateAction<number>) => void;
     setIsMuted: (muted: SetStateAction<boolean>) => void;
     setRepeatOneCount: (count: SetStateAction<number>) => void;
-    setVibeMode: (mode: SetStateAction<boolean>) => void;
-    setVibeSourceFeatures: (
-        features: SetStateAction<AudioFeatures | null>
-    ) => void;
-    setVibeQueueIds: (ids: SetStateAction<string[]>) => void;
+    setActiveOperation: (op: SetStateAction<VibeOperation>) => void;
 }
 
 const AudioStateContext = createContext<AudioStateContextType | undefined>(
@@ -242,11 +243,8 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
     const isShuffleRef = useRef(isShuffle);
     useEffect(() => { isShuffleRef.current = isShuffle; }, [isShuffle]);
 
-    // Vibe mode state
-    const [vibeMode, setVibeMode] = useState(false);
-    const [vibeSourceFeatures, setVibeSourceFeatures] =
-        useState<AudioFeatures | null>(null);
-    const [vibeQueueIds, setVibeQueueIds] = useState<string[]>([]);
+    // Vibe operation state
+    const [activeOperation, setActiveOperation] = useState<VibeOperation>({ type: 'idle' });
 
     // Refresh audiobook/podcast progress from API on mount, then sync with server
     useEffect(() => {
@@ -667,9 +665,7 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             previousPlayerMode,
             volume,
             isMuted,
-            vibeMode,
-            vibeSourceFeatures,
-            vibeQueueIds,
+            activeOperation,
             repeatOneCount,
             setCurrentTrack,
             setCurrentAudiobook,
@@ -686,9 +682,7 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             setVolume,
             setIsMuted,
             setRepeatOneCount,
-            setVibeMode,
-            setVibeSourceFeatures,
-            setVibeQueueIds,
+            setActiveOperation,
         }),
         [
             currentTrack,
@@ -705,9 +699,7 @@ export function AudioStateProvider({ children }: { children: ReactNode }) {
             previousPlayerMode,
             volume,
             isMuted,
-            vibeMode,
-            vibeSourceFeatures,
-            vibeQueueIds,
+            activeOperation,
             repeatOneCount,
         ]
     );

@@ -5,7 +5,7 @@ import { X, Plus, Minus, FlaskConical, Search, Play } from "lucide-react";
 import { api } from "@/lib/api";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAudioControls } from "@/lib/audio-controls-context";
-import type { Track } from "@/lib/audio-state-context";
+import type { Track, VibeOperation } from "@/lib/audio-state-context";
 
 interface VibeAlchemyProps {
     onHighlight: (ids: Set<string>) => void;
@@ -19,7 +19,7 @@ interface SelectedTrack {
 }
 
 export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
-    const { playTracks } = useAudioControls();
+    const { replaceOperation } = useAudioControls();
     const [addTracks, setAddTracks] = useState<SelectedTrack[]>([]);
     const [subtractTracks, setSubtractTracks] = useState<SelectedTrack[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
@@ -107,8 +107,14 @@ export function VibeAlchemy({ onHighlight, onClose }: VibeAlchemyProps) {
             album: { title: t.album.title, coverArt: t.album.coverUrl ?? undefined, id: t.album.id },
             artist: { name: t.artist.name, id: t.artist.id },
         }));
-        playTracks(playable, 0, true);
-    }, [results, playTracks]);
+        const op: VibeOperation = {
+            type: 'blend',
+            addTrackIds: addTracks.map((t) => t.id),
+            subtractTrackIds: subtractTracks.map((t) => t.id),
+            resultTrackIds: playable.map((t) => t.id),
+        };
+        replaceOperation(op, playable, 0);
+    }, [results, addTracks, subtractTracks, replaceOperation]);
 
     return (
         <div className="absolute top-16 left-1/2 -translate-x-1/2 z-20 w-[calc(100vw-2rem)] sm:w-[480px] max-h-[70vh] bg-black/90 backdrop-blur-lg border border-white/10 rounded-xl flex flex-col overflow-hidden">

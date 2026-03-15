@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Calendar, Clock, Download, Music2, Disc, ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/utils/cn";
 import { GradientSpinner } from "@/components/ui/GradientSpinner";
+import { api } from "@/lib/api";
 import Link from "next/link";
 import Image from "next/image";
 
@@ -37,9 +38,7 @@ export default function ReleasesPage() {
     const fetchReleases = async () => {
         try {
             setLoading(true);
-            const res = await fetch("/api/releases/radar?daysBack=30&daysAhead=90");
-            if (!res.ok) throw new Error("Failed to fetch releases");
-            const json = await res.json();
+            const json = await api.get<ReleaseRadarData>("/releases/radar?daysBack=30&daysAhead=90");
             setData(json);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "Failed to fetch releases");
@@ -55,13 +54,8 @@ export default function ReleasesPage() {
     const handleDownload = async (albumMbid: string, releaseId: string | number) => {
         try {
             setDownloadingId(releaseId);
-            const res = await fetch(`/api/releases/download/${albumMbid}`, {
-                method: "POST",
-            });
-            if (res.ok) {
-                // Refresh to show updated status
-                await fetchReleases();
-            }
+            await api.post(`/releases/download/${albumMbid}`);
+            await fetchReleases();
         } catch (err) {
             console.error("Download failed:", err);
         } finally {

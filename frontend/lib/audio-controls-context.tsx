@@ -7,6 +7,7 @@ import {
     useRef,
     useEffect,
     useLayoutEffect,
+    useState,
     ReactNode,
     useMemo,
 } from "react";
@@ -16,7 +17,9 @@ import {
     Audiobook,
     Podcast,
     PlayerMode,
+    VibeOperation,
 } from "./audio-state-context";
+import { OperationConfirmToast } from "@/components/ui/OperationConfirmToast";
 import { useAudioPlayback } from "./audio-playback-context";
 import { api } from "@/lib/api";
 import { useAudioController } from "./audio-controller-context";
@@ -25,7 +28,7 @@ import { dispatchQueryEvent } from "@/lib/query-events";
 interface AudioControlsContextType {
     // Track methods
     playTrack: (track: Track) => void;
-    playTracks: (tracks: Track[], startIndex?: number, isVibeQueue?: boolean) => void;
+    playTracks: (tracks: Track[], startIndex?: number) => void;
 
     // Audiobook methods
     playAudiobook: (audiobook: Audiobook) => void;
@@ -68,6 +71,11 @@ interface AudioControlsContextType {
     // Vibe mode controls
     startVibeMode: () => Promise<{ success: boolean; trackCount: number }>;
     stopVibeMode: () => void;
+    replaceOperation: (
+        newOp: VibeOperation,
+        queue: Track[],
+        startIndex?: number,
+    ) => Promise<boolean>;
 }
 
 const AudioControlsContext = createContext<
@@ -214,10 +222,17 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
 
     const playTrack = useCallback(
         (track: Track) => {
-            if (state.vibeMode && !state.vibeQueueIds.includes(track.id)) {
-                state.setVibeMode(false);
-                state.setVibeSourceFeatures(null);
-                state.setVibeQueueIds([]);
+            if (state.activeOperation.type !== 'idle') {
+                const opTrackIds = 'trackIds' in state.activeOperation
+                    ? state.activeOperation.trackIds
+                    : 'pathTrackIds' in state.activeOperation
+                        ? state.activeOperation.pathTrackIds
+                        : 'resultTrackIds' in state.activeOperation
+                            ? state.activeOperation.resultTrackIds
+                            : [];
+                if (!opTrackIds.includes(track.id)) {
+                    state.setActiveOperation({ type: 'idle' });
+                }
             }
 
             state.setPlaybackType("track");
@@ -238,12 +253,20 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
     );
 
     const playTracks = useCallback(
-        (tracks: Track[], startIndex = 0, isVibeQueue = false) => {
+        (tracks: Track[], startIndex = 0, { skipOperationCheck = false } = {}) => {
             if (tracks.length === 0) return;
-            if (!isVibeQueue && state.vibeMode) {
-                state.setVibeMode(false);
-                state.setVibeSourceFeatures(null);
-                state.setVibeQueueIds([]);
+
+            if (!skipOperationCheck && state.activeOperation.type !== 'idle') {
+                const opTrackIds = 'trackIds' in state.activeOperation
+                    ? state.activeOperation.trackIds
+                    : 'pathTrackIds' in state.activeOperation
+                        ? state.activeOperation.pathTrackIds
+                        : 'resultTrackIds' in state.activeOperation
+                            ? state.activeOperation.resultTrackIds
+                            : [];
+                if (!opTrackIds.includes(tracks[startIndex]?.id)) {
+                    state.setActiveOperation({ type: 'idle' });
+                }
             }
 
             state.setPlaybackType("track");
@@ -647,7 +670,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
                     state.setCurrentTrack(tracks[0]);
                     state.setPlaybackType("track");
                     playback.setCurrentTime(0);
-                    if (!preserveOrder && !state.vibeMode) {
+                    if (!preserveOrder && state.activeOperation.type === 'idle') {
                         state.setShuffleIndices(
                             generateShuffleIndices(tracks.length, 0)
                         );
@@ -669,7 +692,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
 
             state.setCurrentIndex(0);
 
-            if (state.isShuffle && !preserveOrder && !state.vibeMode) {
+            if (state.isShuffle && !preserveOrder && state.activeOperation.type === 'idle') {
                 state.setShuffleIndices(
                     generateShuffleIndices(tracks.length + 1, 0)
                 );
@@ -681,7 +704,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
     );
 
     const toggleShuffle = useCallback(() => {
-        if (state.vibeMode) {
+        if (state.activeOperation.type !== 'idle') {
             return;
         }
 
@@ -790,6 +813,56 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
         state.setIsMuted((prev) => !prev);
     }, [state]);
 
+    const [pendingReplacement, setPendingReplacement] = useState<{
+        currentOpName: string;
+        newOpName: string;
+        resolve: (confirmed: boolean) => void;
+    } | null>(null);
+
+    const replaceOperation = useCallback(async (
+        newOp: VibeOperation,
+        newQueue: Track[],
+        startIndex = 0,
+    ): Promise<boolean> => {
+        const op = state.activeOperation;
+
+        if (op.type === 'idle') {
+            state.setActiveOperation(newOp);
+            playTracks(newQueue, startIndex, { skipOperationCheck: true });
+            return true;
+        }
+
+        const currentTrackId = state.currentTrack?.id;
+        const opTrackIds = 'trackIds' in op ? op.trackIds
+            : 'pathTrackIds' in op ? op.pathTrackIds
+            : 'resultTrackIds' in op ? op.resultTrackIds
+            : [];
+
+        if (!currentTrackId || !opTrackIds.includes(currentTrackId)) {
+            state.setActiveOperation(newOp);
+            playTracks(newQueue, startIndex, { skipOperationCheck: true });
+            return true;
+        }
+
+        return new Promise((resolve) => {
+            setPendingReplacement((prev) => {
+                if (prev) prev.resolve(false);
+                return {
+                    currentOpName: op.type,
+                    newOpName: newOp.type,
+                    resolve: (confirmed) => {
+                        if (confirmed) {
+                            state.setActiveOperation(newOp);
+                            playTracks(newQueue, startIndex, { skipOperationCheck: true });
+                        }
+                        setPendingReplacement(null);
+                        resolve(confirmed);
+                    },
+                };
+            });
+        });
+    }, [state, playTracks]);
+
     // Vibe mode controls - uses CLAP similarity API
     const startVibeMode = useCallback(async (): Promise<{
         success: boolean;
@@ -806,9 +879,6 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             if (!response.tracks || response.tracks.length === 0) {
                 return { success: false, trackCount: 0 };
             }
-
-            state.setIsShuffle(false);
-            state.setShuffleIndices([]);
 
             const queueIds = [
                 currentTrack.id,
@@ -827,29 +897,35 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
                 },
             }));
 
-            state.setVibeMode(true);
-            state.setVibeSourceFeatures(currentTrack.audioFeatures || null);
-            state.setVibeQueueIds(queueIds);
+            const newOp: VibeOperation = {
+                type: 'vibe',
+                sourceTrackId: currentTrack.id,
+                sourceFeatures: currentTrack.audioFeatures || {},
+                trackIds: queueIds,
+            };
 
-            state.setQueue((prev) => {
-                const current = prev[state.currentIndex];
-                if (!current) return [currentTrack, ...vibeTracks];
-                return [current, ...vibeTracks];
-            });
+            const confirmed = await replaceOperation(
+                newOp,
+                [currentTrack, ...vibeTracks],
+                0,
+            );
 
-            state.setCurrentIndex(0);
+            if (!confirmed) {
+                return { success: false, trackCount: 0 };
+            }
+
+            state.setIsShuffle(false);
+            state.setShuffleIndices([]);
 
             return { success: true, trackCount: response.tracks.length };
         } catch (error) {
             console.error("[Vibe] Failed to get similar tracks:", error);
             return { success: false, trackCount: 0 };
         }
-    }, [state]);
+    }, [state, replaceOperation]);
 
     const stopVibeMode = useCallback(() => {
-        state.setVibeMode(false);
-        state.setVibeSourceFeatures(null);
-        state.setVibeQueueIds([]);
+        state.setActiveOperation({ type: 'idle' });
     }, [state]);
 
     // -- Refs kept in sync for event handlers --
@@ -1126,29 +1202,59 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
     useEffect(() => { controllerRef.current?.setMuted(state.isMuted); }, [state.isMuted]);
 
     // -- Foreground recovery --
+    // Uses both visibilitychange and pageshow/pagehide for iOS PWA reliability.
+    // iOS Safari PWA fires pageshow/pagehide more reliably than visibilitychange
+    // when the app is suspended/resumed from the app switcher.
     useEffect(() => {
-        const handleVisibility = () => {
-            if (document.hidden) {
-                if (playbackTypeRef.current === "audiobook") {
-                    saveAudiobookProgressRef.current();
-                } else if (playbackTypeRef.current === "podcast") {
-                    savePodcastProgressRef.current();
-                }
-                return;
+        const handleBackground = () => {
+            if (playbackTypeRef.current === "audiobook") {
+                saveAudiobookProgressRef.current();
+            } else if (playbackTypeRef.current === "podcast") {
+                savePodcastProgressRef.current();
             }
+        };
+
+        const handleForeground = () => {
             const ctrl = controllerRef.current;
             if (!ctrl) return;
+
+            ctrl.notifyForeground();
 
             if (playbackTypeRef.current) {
                 const hasMedia = currentTrackRef.current || currentAudiobookRef.current || currentPodcastRef.current;
                 if (hasMedia) {
                     playback.setAudioError(null);
+                    if (ctrl.isPlaying()) {
+                        ctrl.tryResume().catch(() => {});
+                    }
                 }
             }
         };
 
+        const handleVisibility = () => {
+            if (document.hidden) {
+                handleBackground();
+            } else {
+                handleForeground();
+            }
+        };
+
+        const handlePageShow = (e: PageTransitionEvent) => {
+            if (e.persisted) handleForeground();
+        };
+
+        const handlePageHide = () => {
+            handleBackground();
+        };
+
         document.addEventListener("visibilitychange", handleVisibility);
-        return () => document.removeEventListener("visibilitychange", handleVisibility);
+        window.addEventListener("pageshow", handlePageShow);
+        window.addEventListener("pagehide", handlePageHide);
+        return () => {
+            document.removeEventListener("visibilitychange", handleVisibility);
+            window.removeEventListener("pageshow", handlePageShow);
+            window.removeEventListener("pagehide", handlePageHide);
+        };
     }, [playback]);
 
     // -- Preload hint --
@@ -1211,6 +1317,7 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             toggleMute,
             startVibeMode,
             stopVibeMode,
+            replaceOperation,
         }),
         [
             playTrack,
@@ -1239,12 +1346,21 @@ export function AudioControlsProvider({ children }: { children: ReactNode }) {
             toggleMute,
             startVibeMode,
             stopVibeMode,
+            replaceOperation,
         ]
     );
 
     return (
         <AudioControlsContext.Provider value={value}>
             {children}
+            {pendingReplacement && (
+                <OperationConfirmToast
+                    currentOpName={pendingReplacement.currentOpName}
+                    newOpName={pendingReplacement.newOpName}
+                    onConfirm={() => pendingReplacement.resolve(true)}
+                    onCancel={() => pendingReplacement.resolve(false)}
+                />
+            )}
         </AudioControlsContext.Provider>
     );
 }

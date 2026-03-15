@@ -11,6 +11,7 @@ import { UniversalPlayer } from "../player/UniversalPlayer";
 import { MediaControlsHandler } from "../player/MediaControlsHandler";
 import { PlayerModeWrapper } from "../player/PlayerModeWrapper";
 import { ActivityPanel } from "./ActivityPanel";
+import { UnifiedPanel } from "./UnifiedPanel";
 import { GalaxyBackground } from "../ui/GalaxyBackground";
 import { GradientSpinner } from "../ui/GradientSpinner";
 import { ReactNode } from "react";
@@ -136,7 +137,7 @@ export function AuthenticatedLayout({ children }: { children: ReactNode }) {
                             }}
                         >
                             <GalaxyBackground />
-                            <div>{children}</div>
+                            <div className="h-full">{children}</div>
                         </main>
 
                         {/* Mini Player - fixed, positioned above bottom nav */}
@@ -171,14 +172,12 @@ export function AuthenticatedLayout({ children }: { children: ReactNode }) {
                             tabIndex={-1}
                             className="flex-1 bg-gradient-to-b from-[#1a1a1a] via-black to-black rounded-lg overflow-y-auto relative focus:outline-none"
                         >
-                            <GalaxyBackground />
+                            {pathname !== "/vibe" && <GalaxyBackground />}
                             {children}
                         </main>
-                        <ActivityPanel
+                        <UnifiedPanel
                             isOpen={activityPanel.isOpen}
                             onToggle={activityPanel.toggle}
-                            activeTab={activityPanel.activeTab}
-                            onTabChange={activityPanel.setActiveTab}
                         />
                     </div>
                     <UniversalPlayer />

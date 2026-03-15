@@ -83,8 +83,15 @@ export function LyricsPanel({ onBack }: LyricsPanelProps) {
                 )}
 
                 {!isLoading && !isSynced && plainLyrics && (
-                    <div className="py-4 whitespace-pre-wrap text-sm text-white/70 leading-relaxed font-mono">
-                        {plainLyrics}
+                    <div className="space-y-1 py-8 overflow-hidden">
+                        {plainLyrics.split("\n").map((line, i) => (
+                            <div
+                                key={i}
+                                className="px-2 py-1.5 rounded text-base text-white opacity-70"
+                            >
+                                {line || "\u00A0"}
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>

@@ -86,7 +86,7 @@ async function findSimilarHybrid(
             SELECT
                 te.track_id,
                 te.embedding <=> (SELECT embedding FROM source) as clap_dist,
-                GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source)) / 2) as clap_sim
+                GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source))) as clap_sim
             FROM track_embeddings te
             WHERE te.track_id != ${trackId}
             ORDER BY te.embedding <=> (SELECT embedding FROM source)
@@ -136,7 +136,7 @@ async function findSimilarClapOnly(
             t.id,
             t.title,
             te.embedding <=> (SELECT embedding FROM source) as distance,
-            GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source)) / 2) as similarity,
+            GREATEST(0, 1 - (te.embedding <=> (SELECT embedding FROM source))) as similarity,
             a.id as "albumId",
             a.title as "albumTitle",
             a."coverUrl" as "albumCoverUrl",

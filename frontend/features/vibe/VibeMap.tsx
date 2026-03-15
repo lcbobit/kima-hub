@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import DeckGL from "@deck.gl/react";
 import { ScatterplotLayer, TextLayer, LineLayer } from "@deck.gl/layers";
 import { OrthographicView } from "@deck.gl/core";
 import type { PickingInfo } from "@deck.gl/core";
 import { useAudioState } from "@/lib/audio-state-context";
-import type { MapTrack, PathResult } from "./types";
+import type { MapTrack, PathResult, VibeMode } from "./types";
 import {
     getTrackColor,
     getTrackHighlightColor,
@@ -22,9 +22,12 @@ interface VibeMapProps {
     highlightedIds: Set<string>;
     selectedTrackId: string | null;
     pathResult: PathResult | null;
-    mode: string;
+    mode: VibeMode;
     trackMap: Map<string, MapTrack>;
+    queueTrackIds?: string[];
+    showLabels?: boolean;
     onTrackClick: (trackId: string) => void;
+    onTrackDoubleClick?: (trackId: string) => void;
     onBackgroundClick: () => void;
 }
 
@@ -41,42 +44,60 @@ export function VibeMap({
     pathResult,
     mode,
     trackMap,
+    queueTrackIds,
+    showLabels = true,
     onTrackClick,
+    onTrackDoubleClick,
     onBackgroundClick,
 }: VibeMapProps) {
-    const { currentTrack } = useAudioState();
+    const { currentTrack, activeOperation } = useAudioState();
     const currentlyPlayingId = currentTrack?.id ?? null;
 
     const [viewState, setViewState] = useState(() => {
+        try {
+            const saved = sessionStorage.getItem("kima_vibemap_camera");
+            if (saved) {
+                const s = JSON.parse(saved);
+                if (s.target && typeof s.zoom === "number") {
+                    return { target: s.target as [number, number, number], zoom: s.zoom, minZoom: 2, maxZoom: 14 };
+                }
+            }
+        } catch { /* noop */ }
         const fit = tracks.length > 0
             ? computeInitialViewState(tracks)
             : { target: [0.5, 0.5, 0] as [number, number, number], zoom: 8 };
         return { target: fit.target, zoom: fit.zoom, minZoom: 2, maxZoom: 14 };
     });
 
+    // Only persist camera to sessionStorage after user has actually interacted.
+    // DeckGL fires onViewStateChange during init/resize/strict-mode remount with
+    // computed defaults that would overwrite the saved position.
+    const userInteracted = useRef(false);
+
     const hasHighlights = highlightedIds.size > 0;
-    const isPathMode = mode === "path-result" && pathResult;
     const zoom = viewState.zoom;
 
-    const pathTrackIds = useMemo(() => {
-        if (!pathResult) return new Set<string>();
-        const ids = new Set<string>();
-        ids.add(pathResult.startTrack.id);
-        ids.add(pathResult.endTrack.id);
-        for (const t of pathResult.path) ids.add(t.id);
-        return ids;
-    }, [pathResult]);
+    const lastClickRef = useRef<{ id: string; time: number } | null>(null);
 
     const handleClick = useCallback(
         (info: PickingInfo) => {
             const id = (info?.object as MapTrack | undefined)?.id;
             if (id) {
+                const now = Date.now();
+                const last = lastClickRef.current;
+                if (last && last.id === id && now - last.time < 400) {
+                    lastClickRef.current = null;
+                    onTrackDoubleClick?.(id);
+                    return;
+                }
+                lastClickRef.current = { id, time: now };
                 onTrackClick(id);
             } else {
+                lastClickRef.current = null;
                 onBackgroundClick();
             }
         },
-        [onTrackClick, onBackgroundClick],
+        [onTrackClick, onTrackDoubleClick, onBackgroundClick],
     );
 
     const glowLayer = useMemo(
@@ -86,7 +107,7 @@ export function VibeMap({
                 data: tracks,
                 getPosition: (d) => [d.x, d.y],
                 getRadius: (d) => {
-                    if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id))
+                    if (currentlyPlayingId === d.id)
                         return getGlowRadius(d, zoom) * 1.4;
                     return getGlowRadius(d, zoom);
                 },
@@ -94,7 +115,7 @@ export function VibeMap({
                 getFillColor: (d) => {
                     if (selectedTrackId === d.id)
                         return [255, 255, 255, 40] as [number, number, number, number];
-                    if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id)) {
+                    if (currentlyPlayingId === d.id) {
                         const c = getGlowColor(d);
                         return [c[0], c[1], c[2], Math.min(255, c[3] * 3)] as [number, number, number, number];
                     }
@@ -104,11 +125,11 @@ export function VibeMap({
                 },
                 pickable: false,
                 updateTriggers: {
-                    getFillColor: [selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId, isPathMode],
-                    getRadius: [zoom, currentlyPlayingId, isPathMode],
+                    getFillColor: [selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId],
+                    getRadius: [zoom, currentlyPlayingId],
                 },
             }),
-        [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId, isPathMode, pathTrackIds],
+        [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId],
     );
 
     const scatterLayer = useMemo(
@@ -119,13 +140,13 @@ export function VibeMap({
                 getPosition: (d) => [d.x, d.y],
                 getRadius: (d) => {
                     const r = getTrackRadius(d, zoom);
-                    if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id))
+                    if (currentlyPlayingId === d.id)
                         return r * 1.3;
                     return r;
                 },
                 radiusUnits: "pixels",
                 getFillColor: (d) => {
-                    if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id))
+                    if (currentlyPlayingId === d.id)
                         return [255, 255, 255, 255] as [number, number, number, number];
                     if (selectedTrackId === d.id)
                         return [255, 255, 255, 255] as [number, number, number, number];
@@ -139,11 +160,11 @@ export function VibeMap({
                 autoHighlight: true,
                 highlightColor: [255, 255, 255, 60],
                 updateTriggers: {
-                    getFillColor: [selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId, isPathMode],
-                    getRadius: [zoom, currentlyPlayingId, isPathMode],
+                    getFillColor: [selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId],
+                    getRadius: [zoom, currentlyPlayingId],
                 },
             }),
-        [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId, isPathMode, pathTrackIds],
+        [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId],
     );
 
     const ringLayer = useMemo(() => {
@@ -152,7 +173,7 @@ export function VibeMap({
             (d) =>
                 selectedTrackId === d.id ||
                 (hasHighlights && highlightedIds.has(d.id)) ||
-                (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id)),
+                (currentlyPlayingId === d.id),
         );
         if (ringTracks.length === 0) return null;
 
@@ -162,7 +183,7 @@ export function VibeMap({
             getPosition: (d) => [d.x, d.y],
             getRadius: (d) => {
                 const r = getTrackRadius(d, zoom);
-                if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id))
+                if (currentlyPlayingId === d.id)
                     return r * 1.3 + 3;
                 return r + 2;
             },
@@ -170,7 +191,7 @@ export function VibeMap({
             filled: false,
             stroked: true,
             getLineColor: (d) => {
-                if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id))
+                if (currentlyPlayingId === d.id)
                     return [255, 255, 255, 180] as [number, number, number, number];
                 if (selectedTrackId === d.id)
                     return [255, 255, 255, 120] as [number, number, number, number];
@@ -178,18 +199,18 @@ export function VibeMap({
                 return [c[0], c[1], c[2], 80] as [number, number, number, number];
             },
             getLineWidth: (d) => {
-                if (isPathMode && currentlyPlayingId === d.id && pathTrackIds.has(d.id)) return 1.5;
+                if (currentlyPlayingId === d.id) return 1.5;
                 return 1;
             },
             lineWidthUnits: "pixels",
             pickable: false,
             updateTriggers: {
-                getLineColor: [selectedTrackId, highlightedIds, currentlyPlayingId, isPathMode],
-                getRadius: [zoom, currentlyPlayingId, isPathMode],
-                getLineWidth: [currentlyPlayingId, isPathMode],
+                getLineColor: [selectedTrackId, highlightedIds, currentlyPlayingId],
+                getRadius: [zoom, currentlyPlayingId],
+                getLineWidth: [currentlyPlayingId],
             },
         });
-    }, [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId, isPathMode, pathTrackIds]);
+    }, [tracks, zoom, selectedTrackId, highlightedIds, hasHighlights, currentlyPlayingId]);
 
     const labelLayer = useMemo(() => {
         if (zoom > 9) return null;
@@ -274,14 +295,131 @@ export function VibeMap({
         });
     }, [pathResult, mode, trackMap]);
 
+    const queuePathLayer = useMemo(() => {
+        if (!queueTrackIds || queueTrackIds.length < 2) return null;
+
+        const playingIdx = currentlyPlayingId
+            ? queueTrackIds.indexOf(currentlyPlayingId)
+            : -1;
+
+        const lineData: Array<{
+            sourcePosition: [number, number];
+            targetPosition: [number, number];
+            color: [number, number, number, number];
+        }> = [];
+
+        for (let i = 0; i < queueTrackIds.length - 1; i++) {
+            const from = trackMap.get(queueTrackIds[i]);
+            const to = trackMap.get(queueTrackIds[i + 1]);
+            if (!from || !to) continue;
+
+            const isPast = playingIdx >= 0 && i < playingIdx;
+            const alpha = isPast ? 25 : 50;
+
+            lineData.push({
+                sourcePosition: [from.x, from.y],
+                targetPosition: [to.x, to.y],
+                color: [180, 160, 120, alpha],
+            });
+        }
+
+        if (lineData.length === 0) return null;
+
+        return new LineLayer({
+            id: "queue-path",
+            data: lineData,
+            getSourcePosition: (d) => d.sourcePosition,
+            getTargetPosition: (d) => d.targetPosition,
+            getColor: (d) => d.color,
+            getWidth: 1,
+            widthUnits: "pixels",
+        });
+    }, [queueTrackIds, trackMap, currentlyPlayingId]);
+
+    const sourceRingLayer = useMemo(() => {
+        if (!activeOperation || activeOperation.type === 'idle' || activeOperation.type === 'blend') return null;
+
+        let sourceId: string;
+        let color: [number, number, number, number];
+
+        if (activeOperation.type === 'drift') {
+            sourceId = activeOperation.startTrackId;
+            color = [236, 178, 0, 120];
+        } else if (activeOperation.type === 'vibe') {
+            sourceId = activeOperation.sourceTrackId;
+            color = [29, 185, 84, 120];
+        } else {
+            sourceId = activeOperation.sourceTrackId;
+            color = [92, 141, 214, 120];
+        }
+
+        const sourceTrack = trackMap.get(sourceId);
+        if (!sourceTrack) return null;
+
+        return new ScatterplotLayer<MapTrack>({
+            id: "operation-source-ring",
+            data: [sourceTrack],
+            getPosition: (d) => [d.x, d.y],
+            getRadius: () => getTrackRadius(sourceTrack, zoom) * 3,
+            radiusUnits: "pixels",
+            filled: false,
+            stroked: true,
+            getLineColor: () => color,
+            getLineWidth: 2,
+            lineWidthUnits: "pixels",
+            pickable: false,
+        });
+    }, [activeOperation, trackMap, zoom]);
+
+    // Track name labels with leader lines -- only when zoomed in
+    const trackNameLayers = useMemo(() => {
+        if (!showLabels || zoom < 10) return { labels: null, leaders: null };
+
+        // Offset in coordinate space -- scales inversely with zoom so it
+        // stays a consistent pixel distance above the dot
+        const offsetY = 18 / Math.pow(2, zoom);
+        const leaderStart = 6 / Math.pow(2, zoom);
+
+        return {
+            labels: new TextLayer<MapTrack>({
+                id: "track-names",
+                data: tracks,
+                getPosition: (d) => [d.x, d.y + offsetY],
+                getText: (d) => d.title,
+                getSize: 10,
+                getColor: [255, 255, 255, 70],
+                fontFamily: "Montserrat, system-ui, sans-serif",
+                fontWeight: 400,
+                getTextAnchor: "middle" as const,
+                getAlignmentBaseline: "bottom" as const,
+                sizeUnits: "pixels" as const,
+                outlineWidth: 3,
+                outlineColor: [5, 5, 5, 200],
+            }),
+            leaders: new LineLayer<MapTrack>({
+                id: "track-name-leaders",
+                data: tracks,
+                getSourcePosition: (d) => [d.x, d.y + leaderStart],
+                getTargetPosition: (d) => [d.x, d.y + offsetY * 0.75],
+                getColor: [255, 255, 255, 25],
+                getWidth: 0.5,
+                widthUnits: "pixels",
+            }),
+        };
+    }, [tracks, zoom, showLabels]);
+
     const layers = useMemo(() => {
         const result: (ScatterplotLayer<MapTrack> | TextLayer | LineLayer | null)[] =
             [glowLayer, scatterLayer];
         if (ringLayer) result.push(ringLayer);
+        if (sourceRingLayer) result.push(sourceRingLayer);
         if (labelLayer) result.push(labelLayer);
+        if (trackNameLayers.leaders) result.push(trackNameLayers.leaders);
+        if (trackNameLayers.labels) result.push(trackNameLayers.labels);
+        if (queuePathLayer) result.push(queuePathLayer);
         if (pathLayer) result.push(pathLayer);
         return result.filter(Boolean);
-    }, [glowLayer, scatterLayer, ringLayer, labelLayer, pathLayer]);
+    }, [glowLayer, scatterLayer, ringLayer, sourceRingLayer, labelLayer, trackNameLayers, queuePathLayer, pathLayer]);
 
     const getTooltip = useCallback((info: PickingInfo) => {
         if (!info?.object) return null;
@@ -308,7 +446,16 @@ export function VibeMap({
             <DeckGL
                 views={MAP_VIEW}
                 viewState={viewState}
-                onViewStateChange={({ viewState: vs }) => setViewState(vs as typeof viewState)}
+                onViewStateChange={({ viewState: vs, interactionState }) => {
+                    const next = vs as typeof viewState;
+                    setViewState(next);
+                    if (interactionState?.isDragging || interactionState?.isZooming || interactionState?.isPanning) {
+                        userInteracted.current = true;
+                    }
+                    if (userInteracted.current) {
+                        try { sessionStorage.setItem("kima_vibemap_camera", JSON.stringify({ target: next.target, zoom: next.zoom })); } catch { /* noop */ }
+                    }
+                }}
                 layers={layers}
                 onClick={handleClick}
                 getTooltip={getTooltip}

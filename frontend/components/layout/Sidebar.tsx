@@ -502,7 +502,7 @@ export function Sidebar() {
 
             {/* Desktop Sidebar */}
             {!isMobileOrTablet && (
-                <aside className="w-72 bg-[#0a0a0a] flex flex-col overflow-hidden relative z-10">
+                <aside className="w-72 bg-[#0a0a0a] flex flex-col overflow-hidden relative z-10 rounded-lg">
                     {sidebarContent}
                 </aside>
             )}

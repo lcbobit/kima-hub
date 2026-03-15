@@ -21,24 +21,19 @@ import {
     Loader2,
     AudioWaveform,
     ChevronLeft,
-    ChevronUp,
-    ChevronDown,
     AlertTriangle,
     RefreshCw,
 } from "lucide-react";
-import { useToast } from "@/lib/toast-context";
 import { cn } from "@/utils/cn";
-import { useState, useRef, useEffect, lazy, Suspense } from "react";
+import { useState, useRef } from "react";
+import { useVibeToggle } from "@/hooks/useVibeToggle";
 import { KeyboardShortcutsTooltip } from "./KeyboardShortcutsTooltip";
 import { SeekSlider } from "./SeekSlider";
 import { SleepTimer } from "./SleepTimer";
 import { useFeatures } from "@/lib/features-context";
 import { usePlaybackProgress } from "@/hooks/usePlaybackProgress";
 
-const EnhancedVibeOverlay = lazy(() => import("./VibeOverlayEnhanced").then(mod => ({ default: mod.EnhancedVibeOverlay })));
-
 export function MiniPlayer() {
-    const { toast } = useToast();
     const {
         currentTrack,
         currentAudiobook,
@@ -46,9 +41,7 @@ export function MiniPlayer() {
         playbackType,
         isShuffle,
         repeatMode,
-        vibeMode,
-        queue,
-        currentIndex,
+        activeOperation,
     } = useAudioState();
     const {
         isPlaying,
@@ -70,71 +63,30 @@ export function MiniPlayer() {
         skipForward,
         skipBackward,
         setPlayerMode,
-        startVibeMode,
-        stopVibeMode,
     } = useAudioControls();
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
     const isMobileOrTablet = isMobile || isTablet;
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
-    const [isVibeLoading, setIsVibeLoading] = useState(false);
+    const { handleVibeToggle, isVibeLoading } = useVibeToggle();
     const [isMinimized, setIsMinimized] = useState(false);
     const [isDismissed, setIsDismissed] = useState(false);
     const [swipeOffset, setSwipeOffset] = useState(0);
-    const [isVibePanelExpanded, setIsVibePanelExpanded] = useState(false);
     const touchStartX = useRef<number | null>(null);
-    const lastMediaIdRef = useRef<string | null>(null);
+    const [lastMediaId, setLastMediaId] = useState<string | null>(null);
 
-    // Get current track's audio features for vibe comparison
-    const currentTrackFeatures = queue[currentIndex]?.audioFeatures || null;
-
-    // Reset dismissed/minimized state when a new track starts playing
     const currentMediaId =
         currentTrack?.id || currentAudiobook?.id || currentPodcast?.id;
 
-    useEffect(() => {
-        // Reset dismissed state when new media loads OR when same media starts playing again
-        if (currentMediaId) {
-            if (currentMediaId !== lastMediaIdRef.current) {
-                // Different media - reset everything
-                lastMediaIdRef.current = currentMediaId;
-                setIsDismissed(false);
-                setIsMinimized(false);
-            } else if (isDismissed && isPlaying) {
-                // Same media but user started playing again - show the player
-                setIsDismissed(false);
-            }
-        }
-    }, [currentMediaId, isDismissed, isPlaying]);
+    // Reset dismissed/minimized on media change or resume (render-time derived state)
+    if (currentMediaId && currentMediaId !== lastMediaId) {
+        setLastMediaId(currentMediaId);
+        if (isDismissed) setIsDismissed(false);
+        if (isMinimized) setIsMinimized(false);
+    } else if (currentMediaId && isDismissed && isPlaying) {
+        setIsDismissed(false);
+    }
 
-    // Handle Vibe Match toggle - finds tracks that sound like the current track
-    const handleVibeToggle = async () => {
-        if (!currentTrack?.id) return;
-
-        // If vibe mode is on, turn it off
-        if (vibeMode) {
-            stopVibeMode();
-            toast.success("Vibe mode off");
-            return;
-        }
-
-        // Otherwise, start vibe mode
-        setIsVibeLoading(true);
-        try {
-            const result = await startVibeMode();
-
-            if (result.success && result.trackCount > 0) {
-                toast.success(`Vibe mode on - ${result.trackCount} similar tracks queued up next`);
-            } else {
-                toast.error("Couldn't find matching tracks in your library");
-            }
-        } catch (error) {
-            console.error("Failed to start vibe match:", error);
-            toast.error("Failed to match vibe");
-        } finally {
-            setIsVibeLoading(false);
-        }
-    };
 
     const { title, subtitle, coverUrl, mediaLink, hasMedia } = useMediaInfo(100);
 
@@ -349,18 +301,18 @@ export function MiniPlayer() {
                                             disabled={isVibeLoading}
                                             className={cn(
                                                 "w-10 h-10 flex items-center justify-center rounded-full transition-colors",
-                                                vibeMode
+                                                activeOperation.type !== 'idle'
                                                     ? "text-brand"
                                                     : "text-white/80 hover:text-brand"
                                             )}
                                             aria-label={
-                                                vibeMode
+                                                activeOperation.type !== 'idle'
                                                     ? "Turn off vibe mode"
                                                     : "Match this vibe"
                                             }
-                                            aria-pressed={vibeMode}
+                                            aria-pressed={activeOperation.type !== 'idle'}
                                             title={
-                                                vibeMode
+                                                activeOperation.type !== 'idle'
                                                     ? "Turn off vibe mode"
                                                     : "Match this vibe"
                                             }
@@ -435,52 +387,6 @@ export function MiniPlayer() {
 
     return (
         <div className="relative">
-            {/* Collapsible Vibe Panel - slides up from player */}
-            {vibeMode && (
-                <div
-                    className={cn(
-                        "absolute left-0 right-0 bottom-full transition-all duration-300 ease-out overflow-hidden border-t border-white/[0.08]",
-                        isVibePanelExpanded ? "max-h-[500px]" : "max-h-0"
-                    )}
-                >
-                    <div className="bg-[#121212]">
-                        <Suspense fallback={<div className="p-4 text-center text-white/50">Loading vibe analysis...</div>}>
-                            <EnhancedVibeOverlay
-                                currentTrackFeatures={currentTrackFeatures}
-                                variant="inline"
-                                onClose={() => setIsVibePanelExpanded(false)}
-                            />
-                        </Suspense>
-                    </div>
-                </div>
-            )}
-
-            {/* Vibe Tab - shows when vibe mode is active */}
-            {vibeMode && (
-                <button
-                    onClick={() => setIsVibePanelExpanded(!isVibePanelExpanded)}
-                    className={cn(
-                        "absolute -top-8 left-1/2 -translate-x-1/2 z-10",
-                        "flex items-center gap-1.5 px-3 py-1 rounded-t-lg",
-                        "bg-[#121212] border border-b-0 border-white/[0.08]",
-                        "text-xs font-medium transition-colors",
-                        isVibePanelExpanded
-                            ? "text-brand"
-                            : "text-white/70 hover:text-brand"
-                    )}
-                    aria-label={isVibePanelExpanded ? "Hide vibe analysis" : "Show vibe analysis"}
-                    aria-expanded={isVibePanelExpanded}
-                >
-                    <AudioWaveform className="w-3.5 h-3.5" />
-                    <span>Vibe Analysis</span>
-                    {isVibePanelExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                    ) : (
-                        <ChevronUp className="w-3.5 h-3.5" />
-                    )}
-                </button>
-            )}
-
             <div className="bg-gradient-to-t from-[#080808] via-[#0c0c0c] to-[#0a0a0a] border-t border-white/[0.08] relative">
                 {/* Brand accent line */}
                 <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-brand/40 to-transparent" />
@@ -753,14 +659,14 @@ export function MiniPlayer() {
                                     "rounded p-1.5 transition-colors",
                                     !hasMedia || !canSkip
                                         ? "text-gray-600 cursor-not-allowed"
-                                        : vibeMode
+                                        : activeOperation.type !== 'idle'
                                         ? "text-brand hover:text-brand-hover"
                                         : "text-gray-400 hover:text-brand"
                                 )}
                                 aria-label="Toggle vibe visualization"
-                                aria-pressed={vibeMode}
+                                aria-pressed={activeOperation.type !== 'idle'}
                                 title={
-                                    vibeMode
+                                    activeOperation.type !== 'idle'
                                         ? "Turn off vibe mode"
                                         : "Match this vibe - find similar sounding tracks"
                                 }

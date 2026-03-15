@@ -32,10 +32,8 @@ export function useAudio() {
         volume: state.volume,
         isMuted: state.isMuted,
         
-        // Vibe mode state
-        vibeMode: state.vibeMode,
-        vibeSourceFeatures: state.vibeSourceFeatures,
-        vibeQueueIds: state.vibeQueueIds,
+        // Vibe operation state
+        activeOperation: state.activeOperation,
 
         // Playback
         isPlaying: playback.isPlaying,

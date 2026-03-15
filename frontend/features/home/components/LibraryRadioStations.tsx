@@ -1,14 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { Radio, Play, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
-import { api } from "@/lib/api";
 import { cn } from "@/utils/cn";
 import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
+import { useLibraryGenresQuery, useLibraryDecadesQuery } from "@/hooks/useQueries";
 import {
     RadioStation,
-    GenreCount,
-    DecadeCount,
     STATIC_STATIONS,
     buildGenreStations,
     buildDecadeStations,
@@ -17,27 +15,18 @@ import {
 
 export function LibraryRadioStations() {
     const { loadingStation, startRadio } = useRadioPlayer();
-    const [genres, setGenres] = useState<GenreCount[]>([]);
-    const [decades, setDecades] = useState<DecadeCount[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const { data: genresData, isLoading: genresLoading } = useLibraryGenresQuery();
+    const { data: decadesData, isLoading: decadesLoading } = useLibraryDecadesQuery();
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [genresRes, decadesRes] = await Promise.all([
-                    api.get<{ genres: GenreCount[] }>("/library/genres"),
-                    api.get<{ decades: DecadeCount[] }>("/library/decades"),
-                ]);
-                setGenres((genresRes.genres || []).filter((g) => g.count >= 15).slice(0, 6));
-                setDecades((decadesRes.decades || []).slice(0, 4));
-            } catch (error) {
-                console.error("Failed to fetch radio data:", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        fetchData();
-    }, []);
+    const isLoading = genresLoading || decadesLoading;
+    const genres = useMemo(
+        () => (genresData?.genres || []).filter((g) => g.count >= 15).slice(0, 6),
+        [genresData],
+    );
+    const decades = useMemo(
+        () => (decadesData?.decades || []).slice(0, 4),
+        [decadesData],
+    );
 
     const allStations = useMemo(() => {
         return [

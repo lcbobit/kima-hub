@@ -1,14 +1,24 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useMemo, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useVibeMap } from "@/features/vibe/useVibeMap";
 import { VibeMap } from "@/features/vibe/VibeMap";
 import { VibeToolbar } from "@/features/vibe/VibeToolbar";
-import { VibeInfoPanel } from "@/features/vibe/VibeInfoPanel";
 import { VibeSongPath } from "@/features/vibe/VibeSongPath";
+import { VibePanelSheet } from "@/features/vibe/VibePanelSheet";
 import { VibeAlchemy } from "@/features/vibe/VibeAlchemy";
+import { useAudioState } from "@/lib/audio-state-context";
+import { useAudioControls } from "@/lib/audio-controls-context";
+import { api } from "@/lib/api";
+import { useIsMobile, useIsTablet } from "@/hooks/useMediaQuery";
 import { Loader2 } from "lucide-react";
-import type { TrackResult } from "@/features/vibe/types";
+type VibeView = "map" | "galaxy";
+
+const GalacticMap = dynamic(
+    () => import("@/features/vibe/scenes/GravityGridScene").then(m => ({ default: m.GravityGridScene })),
+    { ssr: false },
+);
 
 class VibeMapErrorBoundary extends React.Component<
     { children: React.ReactNode },
@@ -56,19 +66,57 @@ export default function VibePage() {
         highlightedIds,
         pathResult,
         selectTrack,
-        showSimilar,
-        startPathPicking,
         completePathPicking,
         resetMode,
         setMode,
         setHighlightedIds,
     } = useVibeMap();
 
-    const [similarTracks, setSimilarTracks] = useState<TrackResult[]>([]);
+    // Suppress async WebGL teardown crash on rapid refresh. deck.gl's luma.gl
+    // has a ResizeObserver that can fire after device destruction, accessing
+    // device.limits.maxTextureDimension2D on an undefined object. Error
+    // boundaries can't catch this (async callback). We intercept in the
+    // capture phase with stopImmediatePropagation to prevent Next.js dev
+    // overlay from displaying it -- the error is harmless (old page teardown).
+    useEffect(() => {
+        const handler = (e: ErrorEvent) => {
+            if (e.message?.includes("maxTextureDimension2D")) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+            }
+        };
+        window.addEventListener("error", handler, true);
+        return () => window.removeEventListener("error", handler, true);
+    }, []);
+
+    const [view, setView] = useState<VibeView>(() => {
+        try {
+            const saved = sessionStorage.getItem("kima_vibe_view");
+            if (saved === "map" || saved === "galaxy") return saved;
+        } catch { /* noop */ }
+        return "map";
+    });
+    const handleViewChange = useCallback((v: VibeView) => {
+        setView(v);
+        try { sessionStorage.setItem("kima_vibe_view", v); } catch { /* noop */ }
+    }, []);
+    const [showLabels, setShowLabels] = useState(() => {
+        try { return localStorage.getItem("kima_vibe_labels") !== "false"; } catch { return true; }
+    });
+    const handleToggleLabels = useCallback(() => {
+        setShowLabels((prev) => {
+            const next = !prev;
+            try { localStorage.setItem("kima_vibe_labels", String(next)); } catch { /* noop */ }
+            return next;
+        });
+    }, []);
     const [showPathPicker, setShowPathPicker] = useState(false);
     const [showAlchemy, setShowAlchemy] = useState(false);
-
-    const selectedTrack = selectedTrackId ? trackMap.get(selectedTrackId) || null : null;
+    const { currentTrack, queue, activeOperation } = useAudioState();
+    const { playTrack } = useAudioControls();
+    const isMobile = useIsMobile();
+    const isTablet = useIsTablet();
+    const queueTrackIds = useMemo(() => queue.map(t => t.id), [queue]);
 
     const handleTrackClick = useCallback((trackId: string) => {
         if (mode === "path-picking") {
@@ -78,10 +126,14 @@ export default function VibePage() {
         selectTrack(trackId);
     }, [mode, selectTrack, completePathPicking]);
 
-    const handleShowSimilar = useCallback(async (trackId: string) => {
-        const tracks = await showSimilar(trackId);
-        setSimilarTracks(tracks);
-    }, [showSimilar]);
+    const handleTrackDoubleClick = useCallback(async (trackId: string) => {
+        try {
+            const track = await api.getTrack(trackId);
+            if (track) playTrack(track);
+        } catch {
+            // Silently fail -- track may not be streamable
+        }
+    }, [playTrack]);
 
     const handleSearch = useCallback((query: string) => {
         if (!query || query.length < 2 || !mapData) {
@@ -124,7 +176,6 @@ export default function VibePage() {
 
     const handleClose = useCallback(() => {
         resetMode();
-        setSimilarTracks([]);
         setShowPathPicker(false);
         setShowAlchemy(false);
     }, [resetMode]);
@@ -174,55 +225,100 @@ export default function VibePage() {
 
     return (
         <div className="w-full h-full relative overflow-hidden">
-            <VibeMapErrorBoundary>
-                <VibeMap
-                    tracks={mapData.tracks}
-                    highlightedIds={highlightedIds}
-                    selectedTrackId={selectedTrackId}
-                    pathResult={pathResult}
+                <VibeMapErrorBoundary>
+                    {view === "map" ? (
+                        <VibeMap
+                            tracks={mapData.tracks}
+                            highlightedIds={highlightedIds}
+                            selectedTrackId={selectedTrackId}
+                            pathResult={pathResult}
+                            mode={mode}
+                            trackMap={trackMap}
+                            queueTrackIds={queueTrackIds}
+                            showLabels={showLabels}
+                            onTrackClick={handleTrackClick}
+                            onTrackDoubleClick={handleTrackDoubleClick}
+                            onBackgroundClick={handleBackgroundClick}
+                        />
+                    ) : (
+                        <GalacticMap
+                            tracks={mapData.tracks}
+                            highlightedIds={highlightedIds}
+                            playingTrackId={currentTrack?.id ?? null}
+                            selectedTrackId={selectedTrackId}
+                            queueTrackIds={queueTrackIds}
+                            activeOperation={activeOperation}
+                            showLabels={showLabels}
+                            onTrackClick={handleTrackClick}
+                            onTrackDoubleClick={handleTrackDoubleClick}
+                            onBackgroundClick={handleBackgroundClick}
+                        />
+                    )}
+                </VibeMapErrorBoundary>
+
+                <VibeToolbar
                     mode={mode}
-                    trackMap={trackMap}
-                    onTrackClick={handleTrackClick}
-                    onBackgroundClick={handleBackgroundClick}
+                    onSearch={handleSearch}
+                    onPathMode={handlePathMode}
+                    onAlchemyMode={handleAlchemyMode}
+                    onReset={handleClose}
                 />
-            </VibeMapErrorBoundary>
 
-            <VibeToolbar
-                mode={mode}
-                onSearch={handleSearch}
-                onPathMode={handlePathMode}
-                onAlchemyMode={handleAlchemyMode}
-                onReset={handleClose}
-            />
+                <div className="absolute top-[max(3.5rem,calc(env(safe-area-inset-top)+3.5rem))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 flex gap-1 rounded-lg backdrop-blur-md border border-white/8 bg-black/20 p-0.5">
+                    <button
+                        onClick={() => handleViewChange("map")}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                            view === "map"
+                                ? "bg-white/10 text-white/70"
+                                : "text-white/30 hover:text-white/50"
+                        }`}
+                    >
+                        Map
+                    </button>
+                    <button
+                        onClick={() => handleViewChange("galaxy")}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                            view === "galaxy"
+                                ? "bg-white/10 text-white/70"
+                                : "text-white/30 hover:text-white/50"
+                        }`}
+                    >
+                        Galaxy
+                    </button>
+                    <div className="w-px h-4 self-center bg-white/10" />
+                    <button
+                        onClick={handleToggleLabels}
+                        className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                            showLabels
+                                ? "bg-white/10 text-white/70"
+                                : "text-white/30 hover:text-white/50"
+                        }`}
+                        title={showLabels ? "Hide labels" : "Show labels"}
+                    >
+                        Labels
+                    </button>
+                </div>
 
-            {showPathPicker && (
-                <VibeSongPath
-                    onStartPath={handlePathSubmit}
-                    onClose={() => setShowPathPicker(false)}
-                />
-            )}
+                {showPathPicker && (
+                    <VibeSongPath
+                        onStartPath={handlePathSubmit}
+                        onClose={() => setShowPathPicker(false)}
+                    />
+                )}
 
-            {showAlchemy && (
-                <VibeAlchemy
-                    onHighlight={setHighlightedIds}
-                    onClose={() => { setShowAlchemy(false); resetMode(); }}
-                />
-            )}
+                {showAlchemy && (
+                    <VibeAlchemy
+                        onHighlight={setHighlightedIds}
+                        onClose={() => { setShowAlchemy(false); resetMode(); }}
+                    />
+                )}
 
-            <VibeInfoPanel
-                mode={mode}
-                selectedTrack={selectedTrack}
-                similarTracks={similarTracks}
-                pathResult={pathResult}
-                onClose={handleClose}
-                onShowSimilar={handleShowSimilar}
-                onStartPath={startPathPicking}
-                onTrackSelect={selectTrack}
-            />
+                <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 text-white/15 text-[10px] tracking-widest uppercase font-medium">
+                    {mapData.trackCount} tracks
+                </div>
 
-            <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-[max(0.75rem,env(safe-area-inset-left))] z-10 text-white/15 text-[10px] tracking-widest uppercase font-medium">
-                {mapData.trackCount} tracks
-            </div>
+            {/* Mobile/tablet: bottom sheet for vibe details */}
+            {(isMobile || isTablet) && <VibePanelSheet />}
         </div>
     );
 }

@@ -21,6 +21,7 @@ export function useMediaSession() {
     const nextRef = useRef(next);
     const previousRef = useRef(previous);
     const seekRef = useRef(seek);
+    const lastPositionUpdateRef = useRef(0);
 
     useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
     useEffect(() => { playbackTypeRef.current = playbackType; }, [playbackType]);
@@ -33,7 +34,10 @@ export function useMediaSession() {
         if (!("mediaSession" in navigator)) return;
         if (!controller) return;
 
-        const onPlay = () => { navigator.mediaSession.playbackState = "playing"; };
+        const onPlay = () => {
+            navigator.mediaSession.playbackState = "playing";
+            lastPositionUpdateRef.current = 0;
+        };
         const onPause = () => { navigator.mediaSession.playbackState = "paused"; };
 
         controller.on("play", onPlay);
@@ -55,6 +59,22 @@ export function useMediaSession() {
         if (!controller) return;
 
         navigator.mediaSession.setActionHandler("play", () => {
+            // Eagerly push position state before iOS defers JS execution
+            if ("setPositionState" in navigator.mediaSession) {
+                const duration = controller.getDuration();
+                const position = controller.getCurrentTime();
+                if (duration > 0) {
+                    try {
+                        navigator.mediaSession.setPositionState({
+                            duration,
+                            playbackRate: 1,
+                            position: Math.min(position, duration),
+                        });
+                    } catch {
+                        // Position state not supported
+                    }
+                }
+            }
             controller.play();
         });
 
@@ -178,7 +198,6 @@ export function useMediaSession() {
     }, [currentTrack, currentAudiobook, currentPodcast, playbackType, getAbsoluteUrl]);
 
     // Position state for lock screen scrubbing (throttled to every 5s)
-    const lastPositionUpdateRef = useRef(0);
     useEffect(() => {
         if (!("mediaSession" in navigator)) return;
         if (!("setPositionState" in navigator.mediaSession)) return;

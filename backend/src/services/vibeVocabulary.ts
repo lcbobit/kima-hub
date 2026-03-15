@@ -294,7 +294,7 @@ export function rerankWithFeatures<T extends {
 
     return candidates.map(track => {
         // CLAP score: convert distance to 0-1 similarity
-        const clapScore = Math.max(0, 1 - (track.distance / 2));
+        const clapScore = Math.max(0, 1 - track.distance);
 
         // Feature score
         const trackFeatures: Record<string, number | null> = {

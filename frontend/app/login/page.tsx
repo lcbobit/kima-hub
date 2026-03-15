@@ -8,13 +8,12 @@ import Image from "next/image";
 import { Loader2 } from "lucide-react";
 import { GalaxyBackground } from "@/components/ui/GalaxyBackground";
 
-interface Artist {
-    id: string;
-    mbid?: string;
-    name: string;
-    heroUrl: string | null;
-    albumCount?: number;
-}
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+    "session_expired": "Your session has expired. Please sign in again.",
+    "unauthorized": "You must be signed in to access that page.",
+    "account_disabled": "Your account has been disabled.",
+    "invalid_token": "Invalid authentication token.",
+};
 
 // Separate component to handle search params (needs Suspense boundary)
 function LoginErrorHandler({
@@ -25,9 +24,10 @@ function LoginErrorHandler({
     const searchParams = useSearchParams();
 
     useEffect(() => {
-        const errorParam = searchParams.get("error");
-        if (errorParam) {
-            setError(decodeURIComponent(errorParam));
+        const errorCode = searchParams.get("error");
+        if (errorCode) {
+            const message = LOGIN_ERROR_MESSAGES[errorCode] ?? "An error occurred. Please try again.";
+            setError(message);
         }
     }, [searchParams, setError]);
 
@@ -45,8 +45,6 @@ export default function LoginPage() {
     const [error, setError] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [isCheckingOnboarding, setIsCheckingOnboarding] = useState(true);
-    const [artists, setArtists] = useState<Artist[]>([]);
-    const [currentArtistIndex, setCurrentArtistIndex] = useState(0);
 
     // Defense in depth: Check if onboarding is needed
     // If no users exist, redirect to onboarding instead of showing login
@@ -67,43 +65,6 @@ export default function LoginPage() {
         };
         checkOnboarding();
     }, [router]);
-
-    // Fetch featured artists for background rotation
-    useEffect(() => {
-        const fetchArtists = async () => {
-            try {
-                // Get recently listened artists (public endpoint or cached data)
-                const response = await fetch(
-                    "/api/library/recently-listened?limit=10"
-                );
-                if (response.ok) {
-                    const data = await response.json();
-                    const artistsWithImages = data.artists.filter(
-                        (a: Artist) => a.heroUrl
-                    );
-                    setArtists(
-                        artistsWithImages.length > 0 ? artistsWithImages : []
-                    );
-                }
-                // Silently ignore errors (expected when not authenticated)
-            } catch {
-                // Fail silently - login page will work without backgrounds
-            }
-        };
-
-        fetchArtists();
-    }, []);
-
-    // Rotate through artists every 5 seconds
-    useEffect(() => {
-        if (artists.length <= 1) return;
-
-        const interval = setInterval(() => {
-            setCurrentArtistIndex((prev) => (prev + 1) % artists.length);
-        }, 5000);
-
-        return () => clearInterval(interval);
-    }, [artists.length]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -149,8 +110,6 @@ export default function LoginPage() {
         }
     };
 
-    const currentArtist = artists[currentArtistIndex];
-
     // Show loading while checking if onboarding is needed
     if (isCheckingOnboarding) {
         return (
@@ -167,61 +126,16 @@ export default function LoginPage() {
                 <LoginErrorHandler setError={setError} />
             </Suspense>
 
-            {/* Animated Background with Artist Images */}
+            {/* Background */}
             <div className="absolute inset-0 bg-[#000]">
-                {/* Subtle accent gradient */}
                 <div className="absolute inset-0 bg-gradient-to-br from-[#fca200]/5 via-transparent to-transparent" />
-
-                {/* Ultra-subtle starfield texture (dialed down vs the main app) */}
                 <div className="opacity-[0.08]">
                     <GalaxyBackground
                         primaryColor="#fca200"
                         secondaryColor="#fca200"
                     />
                 </div>
-
-                {artists.length > 0 && currentArtist?.heroUrl && (
-                    <>
-                        <div
-                            key={currentArtistIndex}
-                            className="absolute inset-0 transition-opacity duration-1000"
-                        >
-                            <Image
-                                src={currentArtist.heroUrl}
-                                alt={currentArtist.name}
-                                fill
-                                className="object-cover"
-                                priority
-                            />
-                        </div>
-                        {/* Heavy blur overlay */}
-                        <div className="absolute inset-0 backdrop-blur-[100px] bg-black/60" />
-
-                        {/* Gradient overlays for depth */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
-                        <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-transparent to-black/80" />
-                    </>
-                )}
             </div>
-
-            {/* Artist Info Section - Bottom Left */}
-            {currentArtist && (
-                <div className="absolute bottom-8 left-8 z-10 text-white max-w-md animate-fade-in">
-                    <p className="text-sm font-medium text-white/60 mb-2">
-                        Featured Artist
-                    </p>
-                    <h2 className="text-3xl md:text-4xl font-bold mb-2 drop-shadow-2xl">
-                        {currentArtist.name}
-                    </h2>
-                    {currentArtist.albumCount !== undefined && (
-                        <p className="text-white/70 text-sm">
-                            {currentArtist.albumCount} album
-                            {currentArtist.albumCount !== 1 ? "s" : ""} in your
-                            library
-                        </p>
-                    )}
-                </div>
-            )}
 
             {/* Login Form - Centered */}
             <div className="relative z-20 min-h-screen flex items-center justify-center p-4">

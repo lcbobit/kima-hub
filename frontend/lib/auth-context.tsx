@@ -45,19 +45,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     useEffect(() => {
         // Check if user has valid session on mount ONLY
         const checkAuth = async () => {
-            // Check for token in URL (from redirect after login)
-            if (typeof window !== "undefined") {
-                const urlParams = new URLSearchParams(window.location.search);
-                const tokenFromUrl = urlParams.get("token");
-                if (tokenFromUrl) {
-                    // Store the token from URL
-                    api.setToken(tokenFromUrl);
-                    // Clean up URL (remove token param)
-                    const cleanUrl = window.location.pathname;
-                    window.history.replaceState({}, "", cleanUrl);
-                }
-            }
-
             try {
                 const userData = await api.getCurrentUser();
                 setUser(userData);

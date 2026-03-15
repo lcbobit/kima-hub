@@ -81,8 +81,15 @@ export function MobileLyricsView() {
                 WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)",
             }}
         >
-            <div className="py-6 whitespace-pre-wrap text-sm text-white/60 leading-relaxed">
-                {plainLyrics}
+            <div className="space-y-1 py-[40%]">
+                {plainLyrics?.split("\n").map((line, i) => (
+                    <div
+                        key={i}
+                        className="px-1 py-1.5 rounded text-sm text-white opacity-60"
+                    >
+                        {line || "\u00A0"}
+                    </div>
+                ))}
             </div>
         </div>
     );

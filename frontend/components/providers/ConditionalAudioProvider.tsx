@@ -46,12 +46,24 @@ export function ConditionalAudioProvider({
     children: React.ReactNode;
 }) {
     const pathname = usePathname();
-    const { isAuthenticated } = useAuth();
+    const { isAuthenticated, isLoading } = useAuth();
 
     const publicPages = ["/login", "/register", "/onboarding", "/setup", "/share"];
     const isPublicPage = publicPages.some(p => pathname === p || pathname.startsWith(p + "/"));
 
-    if (isPublicPage || !isAuthenticated) {
+    // Public pages: render children directly without audio providers
+    if (isPublicPage) {
+        return <>{children}</>;
+    }
+
+    // Authenticated pages: wait for auth to resolve before rendering.
+    // This prevents the tree shape from changing (Fragment -> AudioProviderInner)
+    // which would cause React to unmount/remount all children and double-fire queries.
+    if (isLoading) {
+        return null;
+    }
+
+    if (!isAuthenticated) {
         return <>{children}</>;
     }
 

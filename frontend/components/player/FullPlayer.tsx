@@ -31,10 +31,12 @@ import {
 import { useRouter, usePathname } from "next/navigation";
 import { useState, useMemo } from "react";
 import { useToast } from "@/lib/toast-context";
+import { useVibeToggle } from "@/hooks/useVibeToggle";
 import { PlaylistSelector } from "@/components/ui/PlaylistSelector";
 import { useAddToPlaylistMutation } from "@/hooks/useQueries";
 import { KeyboardShortcutsTooltip } from "./KeyboardShortcutsTooltip";
 import { cn } from "@/utils/cn";
+import { computeVibeMatchScore } from "@/utils/vibeMatchScore";
 import { useFeatures } from "@/lib/features-context";
 import { formatTime, formatTimeRemaining } from "@/utils/formatTime";
 import { SeekSlider } from "./SeekSlider";
@@ -52,8 +54,7 @@ export function FullPlayer() {
         isMuted,
         isShuffle,
         repeatMode,
-        vibeMode,
-        vibeSourceFeatures,
+        activeOperation,
         queue,
         currentIndex,
     } = useAudioState();
@@ -82,72 +83,22 @@ export function FullPlayer() {
         toggleMute,
         toggleShuffle,
         toggleRepeat,
-        startVibeMode,
-        stopVibeMode,
     } = useAudioControls();
 
     const router = useRouter();
     const pathname = usePathname();
-    const [isVibeLoading, setIsVibeLoading] = useState(false);
+    const { handleVibeToggle, isVibeLoading } = useVibeToggle();
     const [showPlaylistSelector, setShowPlaylistSelector] = useState(false);
     const { vibeEmbeddings, loading: featuresLoading } = useFeatures();
     const { handleLyricsToggle, isLyricsActive } = useLyricsToggle({ isMobile: false });
     const { mutateAsync: addToPlaylist } = useAddToPlaylistMutation();
 
-    // Get current track's audio features for vibe comparison
     const currentTrackFeatures = queue[currentIndex]?.audioFeatures || null;
 
-    // Calculate vibe match score (simplified version - compares key audio features)
     const vibeMatchScore = useMemo(() => {
-        if (!vibeMode || !vibeSourceFeatures || !currentTrackFeatures) return null;
-
-        // Compare key features: energy, valence, danceability, arousal
-        const features = ['energy', 'valence', 'danceability', 'arousal'] as const;
-        const scores: number[] = [];
-
-        for (const key of features) {
-            const sourceVal = vibeSourceFeatures[key as keyof typeof vibeSourceFeatures];
-            const currentVal = currentTrackFeatures[key as keyof typeof currentTrackFeatures];
-
-            if (typeof sourceVal === 'number' && typeof currentVal === 'number') {
-                const diff = Math.abs(sourceVal - currentVal);
-                scores.push(1 - diff);
-            }
-        }
-
-        if (scores.length === 0) return null;
-        const avgScore = scores.reduce((a, b) => a + b, 0) / scores.length;
-        return Math.round(avgScore * 100);
-    }, [vibeMode, vibeSourceFeatures, currentTrackFeatures]);
-
-    // Handle Vibe Mode toggle - finds tracks that sound like the current track
-    const handleVibeToggle = async () => {
-        if (!currentTrack?.id) return;
-
-        // If vibe mode is on, turn it off
-        if (vibeMode) {
-            stopVibeMode();
-            toast.success("Vibe mode off");
-            return;
-        }
-
-        // Otherwise, start vibe mode
-        setIsVibeLoading(true);
-        try {
-            const result = await startVibeMode();
-
-            if (result.success && result.trackCount > 0) {
-                toast.success(`Vibe mode on - ${result.trackCount} similar tracks queued up next`);
-            } else {
-                toast.error("Couldn't find matching tracks in your library");
-            }
-        } catch (error) {
-            console.error("Failed to start vibe match:", error);
-            toast.error("Failed to match vibe");
-        } finally {
-            setIsVibeLoading(false);
-        }
-    };
+        if (activeOperation.type === 'idle' || !('sourceFeatures' in activeOperation)) return null;
+        return computeVibeMatchScore(activeOperation.sourceFeatures, currentTrackFeatures);
+    }, [activeOperation, currentTrackFeatures]);
 
 
     const { title, subtitle, coverUrl, artistLink, mediaLink, hasMedia } = useMediaInfo(100);
@@ -234,7 +185,7 @@ export function FullPlayer() {
                                 </p>
                             )}
                             {/* Vibe match score when in vibe mode */}
-                            {vibeMode && vibeMatchScore !== null && (
+                            {activeOperation.type !== 'idle' && vibeMatchScore !== null && (
                                 <span
                                     className={cn(
                                         "inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded mt-1",
@@ -430,7 +381,7 @@ export function FullPlayer() {
                                         "transition-all duration-200 hover:scale-110 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:scale-100",
                                         !hasMedia || playbackType !== "track"
                                             ? "text-gray-600"
-                                            : vibeMode
+                                            : activeOperation.type !== 'idle'
                                             ? "text-brand hover:text-brand-hover"
                                             : "text-gray-400 hover:text-brand"
                                     )}
@@ -440,13 +391,13 @@ export function FullPlayer() {
                                         isVibeLoading
                                     }
                                     aria-label={
-                                        vibeMode
+                                        activeOperation.type !== 'idle'
                                             ? "Turn off vibe mode"
                                             : "Match this vibe"
                                     }
-                                    aria-pressed={vibeMode}
+                                    aria-pressed={activeOperation.type !== 'idle'}
                                     title={
-                                        vibeMode
+                                        activeOperation.type !== 'idle'
                                             ? "Turn off vibe mode"
                                             : "Match this vibe - find similar sounding tracks"
                                     }

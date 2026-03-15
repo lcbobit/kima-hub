@@ -122,6 +122,9 @@ backend/cache/
 frontend/android/
 frontend/test-*.tsx
 
+# Research/Scraping Cache
+**/.firecrawl/
+
 # AI Tools & Assistants
 .claude/
 **/.claude/

@@ -275,13 +275,13 @@ router.get("/similar/:trackId", requireAuth, async (req, res) => {
     }
 });
 
-// Convert CLAP cosine distance (0-2 range) to similarity percentage (0-1)
+// Convert pgvector cosine distance to similarity (0-1)
 // distance 0 = identical, distance 1 = orthogonal, distance 2 = opposite
 function distanceToSimilarity(distance: number): number {
-    return Math.max(0, 1 - distance / 2);
+    return Math.max(0, 1 - distance);
 }
 
-const MIN_SEARCH_SIMILARITY = 0.60;
+const MIN_SEARCH_SIMILARITY = 0.40;
 
 /**
  * POST /api/vibe/search
@@ -314,8 +314,8 @@ router.post("/search", requireAuth, async (req, res) => {
             : MIN_SEARCH_SIMILARITY;
 
         // Convert similarity threshold to max distance
-        // similarity = 1 - (distance / 2), so distance = 2 * (1 - similarity)
-        const maxDistance = 2 * (1 - similarityThreshold);
+        // similarity = 1 - distance, so distance = 1 - similarity
+        const maxDistance = 1 - similarityThreshold;
 
         const trimmedQuery = query.trim();
         const safeQuery = sanitizeForLog(trimmedQuery);

@@ -155,12 +155,14 @@ export function useEventSource() {
                             );
                             break;
                         case "connected":
+                            // Only refetch on reconnect (not initial connect) to avoid
+                            // duplicate requests when queries were just fetched on mount.
+                            if (reconnectAttemptsRef.current > 0) {
+                                queryClient.invalidateQueries({ queryKey: ["notifications"] });
+                                queryClient.invalidateQueries({ queryKey: ["active-downloads"] });
+                                queryClient.invalidateQueries({ queryKey: ["download-history"] });
+                            }
                             reconnectAttemptsRef.current = 0;
-                            // Refresh notifications and downloads on connect/reconnect
-                            // to pick up any events missed while disconnected
-                            queryClient.invalidateQueries({ queryKey: ["notifications"] });
-                            queryClient.invalidateQueries({ queryKey: ["active-downloads"] });
-                            queryClient.invalidateQueries({ queryKey: ["download-history"] });
                             // Sync batch status after reconnect to clear stale cache
                             api.getDiscoverBatchStatus()
                                 .then(status => {

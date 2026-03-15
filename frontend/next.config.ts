@@ -74,7 +74,7 @@ const nextConfig: NextConfig = {
         deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
         imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
         minimumCacheTTL: 60 * 60 * 24 * 7, // Cache for 7 days
-        dangerouslyAllowSVG: true,
+        // SVG optimization disabled for security (prevents XSS via crafted SVGs)
     },
     reactStrictMode: true,
     async headers() {
@@ -87,20 +87,20 @@ const nextConfig: NextConfig = {
                         value: "camera=(), microphone=(), geolocation=()",
                     },
                     {
-                        key: "Content-Security-Policy",
-                        value: [
-                            "default-src 'self'",
-                            `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
-                            "style-src 'self' 'unsafe-inline'",
-                            "img-src 'self' data: blob: https://cdn-images.dzcdn.net https://e-cdns-images.dzcdn.net https://lastfm.freetls.fastly.net https://lastfm-img2.akamaized.net https://assets.fanart.tv https://i.scdn.co https://mosaic.scdn.co https://image-cdn-ak.spotifycdn.com https://image-cdn-fa.spotifycdn.com https://assets.pippa.io https://is1-ssl.mzstatic.com",
-                            "media-src 'self' blob: data:",
-                            "connect-src 'self' ws: wss:",
-                            "font-src 'self'",
-                            "object-src 'none'",
-                            "base-uri 'self'",
-                            "form-action 'self'",
-                            "frame-ancestors 'none'",
-                        ].join("; "),
+                        key: "X-Frame-Options",
+                        value: "DENY",
+                    },
+                    {
+                        key: "X-Content-Type-Options",
+                        value: "nosniff",
+                    },
+                    {
+                        key: "Referrer-Policy",
+                        value: "strict-origin-when-cross-origin",
+                    },
+                    {
+                        key: "X-DNS-Prefetch-Control",
+                        value: "on",
                     },
                 ],
             },

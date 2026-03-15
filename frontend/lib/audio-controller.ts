@@ -249,7 +249,7 @@ export class AudioController {
             console.error("[AudioController] Max stall recoveries exceeded, giving up");
             this.emit("error", {
                 error: "Playback stalled repeatedly",
-                code: 2,
+                code: 99,
             });
             return;
         }
@@ -315,7 +315,15 @@ export class AudioController {
     }
 
     pause(): void {
+        this.autoResumeAfterRecovery = false;
         this.audio.pause();
+    }
+
+    notifyForeground(): void {
+        if (this.watchdogInterval) {
+            this.resetWatchdog();
+        }
+        this.cancelStallGrace();
     }
 
     stop(): void {

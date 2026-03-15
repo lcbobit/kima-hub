@@ -89,6 +89,10 @@ export const queryKeys = {
 
     // Browse (Deezer playlists/radios)
     browseAll: () => ["browse", "all"] as const,
+
+    // Library radio data
+    libraryGenres: () => ["library", "genres"] as const,
+    libraryDecades: () => ["library", "decades"] as const,
 };
 
 /**
@@ -843,5 +847,31 @@ export function useBrowseAllQuery() {
             return api.get<BrowseAllResponse>("/browse/all");
         },
         staleTime: 10 * 60 * 1000, // 10 minutes - playlists don't change often
+    });
+}
+
+/**
+ * Hook to fetch library genre counts for radio stations
+ */
+export function useLibraryGenresQuery() {
+    return useQuery({
+        queryKey: queryKeys.libraryGenres(),
+        queryFn: async () => {
+            return api.get<{ genres: Array<{ genre: string; count: number }> }>("/library/genres");
+        },
+        staleTime: 10 * 60 * 1000,
+    });
+}
+
+/**
+ * Hook to fetch library decade counts for radio stations
+ */
+export function useLibraryDecadesQuery() {
+    return useQuery({
+        queryKey: queryKeys.libraryDecades(),
+        queryFn: async () => {
+            return api.get<{ decades: Array<{ decade: number; count: number }> }>("/library/decades");
+        },
+        staleTime: 10 * 60 * 1000,
     });
 }
